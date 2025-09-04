@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CORS Test - Super Tic-Tac-Toe</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .test-result {
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 5px;
+        font-weight: bold;
+      }
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+      pre {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        overflow-x: auto;
+        font-size: 12px;
+      }
+      .test-section {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+      }
+      .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+      .status-success {
+        background-color: #28a745;
+      }
+      .status-error {
+        background-color: #dc3545;
+      }
+      .status-pending {
+        background-color: #ffc107;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎯 Super Tic-Tac-Toe CORS Test</h1>
+      <p>
+        This page tests the CORS configuration and network connectivity of the
+        Super Tic-Tac-Toe worker.
+      </p>
+
+      <div class="test-section">
+        <h3>📍 Connection Info</h3>
+        <div id="origin-info" class="test-result info">
+          <strong>Current Origin:</strong> <span id="current-origin"></span>
+        </div>
+        <div class="test-result info">
+          <strong>Worker URL:</strong>
+          https://super-tic-tac-toe-worker.mshik3.workers.dev
+        </div>
+      </div>
+
+      <div class="test-section">
+        <h3>🧪 Test Controls</h3>
+        <button onclick="testHealthEndpoint()">
+          <span class="status-indicator" id="health-status"></span>
+          Test Health Endpoint
+        </button>
+        <button onclick="testQueueStatus()">
+          <span class="status-indicator" id="queue-status"></span>
+          Test Queue Status
+        </button>
+        <button onclick="testJoinQueue()">
+          <span class="status-indicator" id="join-status"></span>
+          Test Join Queue
+        </button>
+        <button onclick="runAllTests()">🚀 Run All Tests</button>
+        <button onclick="clearResults()">🧹 Clear Results</button>
+      </div>
+
+      <div class="test-section">
+        <h3>📊 Test Results</h3>
+        <div id="results"></div>
+      </div>
+    </div>
+
+    <script>
+      const WORKER_URL = "https://super-tic-tac-toe-worker.mshik3.workers.dev";
+
+      // Display current origin
+      document.getElementById("current-origin").textContent =
+        window.location.origin;
+
+      // Initialize status indicators
+      function setStatus(elementId, status) {
+        const element = document.getElementById(elementId);
+        element.className = `status-indicator status-${status}`;
+      }
+
+      function addResult(message, type = "info") {
+        const results = document.getElementById("results");
+        const div = document.createElement("div");
+        div.className = `test-result ${type}`;
+        div.innerHTML = message;
+        results.appendChild(div);
+        results.scrollTop = results.scrollHeight;
+      }
+
+      function clearResults() {
+        document.getElementById("results").innerHTML = "";
+        // Reset all status indicators
+        ["health-status", "queue-status", "join-status"].forEach((id) => {
+          setStatus(id, "pending");
+        });
+      }
+
+      async function testHealthEndpoint() {
+        addResult("🔍 Testing Health Endpoint...", "info");
+        setStatus("health-status", "pending");
+
+        try {
+          const startTime = Date.now();
+          const response = await fetch(`${WORKER_URL}/health`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+          const duration = Date.now() - startTime;
+
+          if (response.ok) {
+            const data = await response.json();
+            addResult(
+              `✅ Health Endpoint Success! (${duration}ms)<br><pre>${JSON.stringify(
+                data,
+                null,
+                2
+              )}</pre>`,
+              "success"
+            );
+            setStatus("health-status", "success");
+          } else {
+            addResult(
+              `❌ Health Endpoint Failed: ${response.status} ${response.statusText}`,
+              "error"
+            );
+            setStatus("health-status", "error");
+          }
+        } catch (error) {
+          addResult(`❌ Health Endpoint Error: ${error.message}`, "error");
+          setStatus("health-status", "error");
+
+          // Check if it's a CORS error
+          if (
+            error.message.includes("CORS") ||
+            error.message.includes("fetch")
+          ) {
+            addResult(
+              `🚨 This looks like a CORS error! The worker might not be allowing requests from ${window.location.origin}`,
+              "error"
+            );
+          }
+        }
+      }
+
+      async function testQueueStatus() {
+        addResult("🔍 Testing Queue Status...", "info");
+        setStatus("queue-status", "pending");
+
+        try {
+          const startTime = Date.now();
+          const response = await fetch(`${WORKER_URL}/queue/status`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+          const duration = Date.now() - startTime;
+
+          if (response.ok) {
+            const data = await response.json();
+            addResult(
+              `✅ Queue Status Success! (${duration}ms)<br><pre>${JSON.stringify(
+                data,
+                null,
+                2
+              )}</pre>`,
+              "success"
+            );
+            setStatus("queue-status", "success");
+          } else {
+            addResult(
+              `❌ Queue Status Failed: ${response.status} ${response.statusText}`,
+              "error"
+            );
+            setStatus("queue-status", "error");
+          }
+        } catch (error) {
+          addResult(`❌ Queue Status Error: ${error.message}`, "error");
+          setStatus("queue-status", "error");
+        }
+      }
+
+      async function testJoinQueue() {
+        addResult("🔍 Testing Join Queue...", "info");
+        setStatus("join-status", "pending");
+
+        const testPlayerId = `test-player-${Date.now()}`;
+
+        try {
+          const startTime = Date.now();
+          const response = await fetch(`${WORKER_URL}/queue/join`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ playerId: testPlayerId }),
+          });
+          const duration = Date.now() - startTime;
+
+          if (response.ok) {
+            const data = await response.json();
+            addResult(
+              `✅ Join Queue Success! (${duration}ms)<br><pre>${JSON.stringify(
+                data,
+                null,
+                2
+              )}</pre>`,
+              "success"
+            );
+            setStatus("join-status", "success");
+
+            // Clean up by leaving the queue
+            setTimeout(async () => {
+              try {
+                await fetch(`${WORKER_URL}/queue/leave`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ playerId: testPlayerId }),
+                });
+                addResult("🧹 Cleaned up test player from queue", "info");
+              } catch (e) {
+                // Ignore cleanup errors
+              }
+            }, 1000);
+          } else {
+            addResult(
+              `❌ Join Queue Failed: ${response.status} ${response.statusText}`,
+              "error"
+            );
+            setStatus("join-status", "error");
+          }
+        } catch (error) {
+          addResult(`❌ Join Queue Error: ${error.message}`, "error");
+          setStatus("join-status", "error");
+        }
+      }
+
+      async function runAllTests() {
+        clearResults();
+        addResult("🚀 Running all tests...", "info");
+
+        await testHealthEndpoint();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        await testQueueStatus();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        await testJoinQueue();
+
+        addResult("🏁 All tests completed!", "info");
+      }
+
+      // Initialize status indicators
+      clearResults();
+
+      // Auto-run health check on load
+      window.addEventListener("load", () => {
+        setTimeout(() => {
+          addResult("🔄 Auto-running health check...", "info");
+          testHealthEndpoint();
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>
