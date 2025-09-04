@@ -27,18 +27,19 @@ export interface GameState {
 // WebSocket message types
 export interface ClientMessage {
 	type: 'MAKE_MOVE' | 'JOIN_GAME' | 'LEAVE_QUEUE';
-	payload: any;
+	payload: MakeMovePayload | Record<string, unknown>;
 }
 
 export interface ServerMessage {
 	type: 'GAME_STATE' | 'MOVE_RESULT' | 'GAME_OVER' | 'QUEUE_STATUS' | 'OPPONENT_FOUND' | 'ERROR';
-	payload: any;
+	payload: GameStatePayload | MoveResultPayload | GameOverPayload | QueueStatusPayload | OpponentFoundPayload | ErrorPayload;
 }
 
 // Specific message payloads
 export interface MakeMovePayload {
 	boardIndex: number;
 	cellIndex: number;
+	sequenceNumber?: number; // Optional for backwards compatibility
 }
 
 export interface GameStatePayload {
@@ -48,6 +49,7 @@ export interface GameStatePayload {
 	currentPlayer: PlayerSymbol;
 	status: GameStatus;
 	opponentConnected: boolean;
+	moves: StoredMove[];
 }
 
 export interface MoveResultPayload {
@@ -56,6 +58,7 @@ export interface MoveResultPayload {
 	currentPlayer: PlayerSymbol;
 	gameStatus: GameStatus;
 	error?: string;
+	move?: StoredMove; // The move that was just made
 }
 
 export interface GameOverPayload {
@@ -78,6 +81,16 @@ export interface OpponentFoundPayload {
 export interface ErrorPayload {
 	message: string;
 	code?: string;
+}
+
+// Move storage types
+export interface StoredMove {
+	notation: string;
+	player: PlayerSymbol;
+	moveNumber: number;
+	timestamp: number;
+	boardIndex: number;
+	cellIndex: number;
 }
 
 // Queue management types

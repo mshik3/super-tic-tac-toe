@@ -6,6 +6,8 @@ import type {
   GameStatePayload,
   MoveResultPayload,
   GameOverPayload,
+  StoredMove,
+  ErrorPayload,
 } from "../types/messages";
 import {
   createNewGame,
@@ -21,10 +23,20 @@ import type { WebSocketStatus } from "../lib/websocket";
 export type GameMode = "local" | "online";
 export type Screen = "menu" | "searching" | "playing";
 
+interface PendingMove {
+  boardIndex: number;
+  cellIndex: number;
+  player: PlayerSymbol;
+  timestamp: number;
+  sequenceNumber: number;
+}
+
 interface GameStore {
   // Game state
   gameState: GameState | null;
   moves: GameMove[];
+  pendingMoves: PendingMove[];
+  moveSequenceNumber: number;
 
   // UI state
   isLoading: boolean;
@@ -83,6 +95,8 @@ export const useGameStore = create<GameStore>()(
           // Initial state
           gameState: null,
           moves: [],
+          pendingMoves: [],
+          moveSequenceNumber: 0,
           isLoading: false,
           error: null,
           currentScreen: "menu",
@@ -307,8 +321,13 @@ export const useGameStore = create<GameStore>()(
 
               case "MOVE_RESULT": {
                 const moveResultPayload = message.payload as MoveResultPayload;
+                const { pendingMoves } = get();
+
                 if (moveResultPayload.valid) {
-                  // Update game state with the move result
+                  // Server confirmed the move - remove from pending moves
+                  const updatedPendingMoves = pendingMoves.slice(0, -1); // Remove the last pending move
+
+                  // Update game state with authoritative server result
                   const updatedGameState: GameState = {
                     gameId: get().gameId || "",
                     board: moveResultPayload.board,
@@ -319,12 +338,34 @@ export const useGameStore = create<GameStore>()(
                     lastMove: Date.now(),
                   };
 
+                  // The move was already optimistically applied, just confirm it
                   set({
                     gameState: updatedGameState,
+                    pendingMoves: updatedPendingMoves,
                     error: null,
                   });
                 } else {
-                  set({ error: moveResultPayload.error || "Invalid move" });
+                  // Server rejected the move - rollback optimistic update
+                  if (pendingMoves.length > 0) {
+                    // Get the current state without pending moves
+                    const { moves } = get();
+
+                    // Remove the last optimistic move
+                    const rolledBackMoves = moves.slice(0, -1);
+
+                    // We need to reconstruct the game state without the failed move
+                    // For now, request fresh state from server by clearing error
+                    // The server will send updated GAME_STATE
+                    set({
+                      moves: rolledBackMoves,
+                      pendingMoves: pendingMoves.slice(0, -1),
+                      error:
+                        moveResultPayload.error ||
+                        "Move was rejected by server",
+                    });
+                  } else {
+                    set({ error: moveResultPayload.error || "Invalid move" });
+                  }
                 }
                 break;
               }
@@ -346,7 +387,7 @@ export const useGameStore = create<GameStore>()(
               }
 
               case "ERROR":
-                set({ error: message.payload.message });
+                set({ error: (message.payload as ErrorPayload).message });
                 break;
 
               default:
@@ -362,6 +403,8 @@ export const useGameStore = create<GameStore>()(
         // Initial state
         gameState: null,
         moves: [],
+        pendingMoves: [],
+        moveSequenceNumber: 0,
         isLoading: false,
         error: null,
         currentScreen: "menu",
@@ -395,7 +438,15 @@ export const useGameStore = create<GameStore>()(
         },
 
         makeMove: (boardIndex: number, cellIndex: number) => {
-          const { gameState, moves, gameMode, websocket, playerSymbol } = get();
+          const {
+            gameState,
+            moves,
+            pendingMoves,
+            moveSequenceNumber,
+            gameMode,
+            websocket,
+            playerSymbol,
+          } = get();
 
           if (!gameState) {
             set({ error: "No active game" });
@@ -407,7 +458,7 @@ export const useGameStore = create<GameStore>()(
             return;
           }
 
-          // For online games, send move via WebSocket
+          // For online games, apply optimistic update then send to server
           if (gameMode === "online" && websocket) {
             // Check if it's our turn
             if (gameState.currentPlayer !== playerSymbol) {
@@ -415,10 +466,57 @@ export const useGameStore = create<GameStore>()(
               return;
             }
 
-            // Send move to server (optimistic update will happen on server response)
-            const success = websocket.makeMove(boardIndex, cellIndex);
+            // Create the move for validation and optimistic update
+            const move = createMove(boardIndex, cellIndex, playerSymbol);
+            const result = applyMove(gameState, move);
+
+            // Validate move locally first
+            if (!result.valid) {
+              set({ error: result.error || "Invalid move" });
+              return;
+            }
+
+            // Apply optimistic update immediately for instant feedback
+            const notation = moveToChessNotation(move);
+            const gameMove: GameMove = {
+              notation,
+              player: move.player,
+              moveNumber: moves.length + 1,
+              timestamp: move.timestamp,
+            };
+
+            const pendingMove: PendingMove = {
+              boardIndex,
+              cellIndex,
+              player: playerSymbol,
+              timestamp: move.timestamp,
+              sequenceNumber: moveSequenceNumber + 1,
+            };
+
+            // Update state with optimistic move
+            set({
+              gameState: result.newGameState,
+              moves: [...moves, gameMove],
+              pendingMoves: [...pendingMoves, pendingMove],
+              moveSequenceNumber: moveSequenceNumber + 1,
+              error: null,
+            });
+
+            // Send move to server for authoritative validation
+            const success = websocket.makeMove(
+              boardIndex,
+              cellIndex,
+              moveSequenceNumber + 1
+            );
             if (!success) {
-              set({ error: "Failed to send move" });
+              // If network fails, we need to rollback the optimistic update
+              set({
+                gameState,
+                moves,
+                pendingMoves,
+                moveSequenceNumber,
+                error: "Failed to send move - please try again",
+              });
             }
             return;
           }
@@ -573,8 +671,20 @@ export const useGameStore = create<GameStore>()(
                 lastMove: Date.now(),
               };
 
+              // Convert StoredMove[] to GameMove[] for consistency
+              const gameMoves: GameMove[] = gameStatePayload.moves.map(
+                (storedMove: StoredMove) => ({
+                  notation: storedMove.notation,
+                  player: storedMove.player,
+                  moveNumber: storedMove.moveNumber,
+                  timestamp: storedMove.timestamp,
+                })
+              );
+
               set({
                 gameState: localGameState,
+                moves: gameMoves,
+                pendingMoves: [], // Reset pending moves for new game state
                 playerSymbol: gameStatePayload.yourSymbol, // Update player symbol from server
                 opponentConnected: gameStatePayload.opponentConnected,
                 error: null,
@@ -585,8 +695,13 @@ export const useGameStore = create<GameStore>()(
 
             case "MOVE_RESULT": {
               const moveResultPayload = message.payload as MoveResultPayload;
+              const { pendingMoves } = get();
+
               if (moveResultPayload.valid) {
-                // Update game state with the move result
+                // Server confirmed the move - remove from pending moves
+                const updatedPendingMoves = pendingMoves.slice(0, -1); // Remove the last pending move
+
+                // Update game state with authoritative server result
                 const updatedGameState: GameState = {
                   gameId: get().gameId || "",
                   board: moveResultPayload.board,
@@ -597,12 +712,33 @@ export const useGameStore = create<GameStore>()(
                   lastMove: Date.now(),
                 };
 
+                // The move was already optimistically applied, just confirm it
                 set({
                   gameState: updatedGameState,
+                  pendingMoves: updatedPendingMoves,
                   error: null,
                 });
               } else {
-                set({ error: moveResultPayload.error || "Invalid move" });
+                // Server rejected the move - rollback optimistic update
+                if (pendingMoves.length > 0) {
+                  // Get the current state without pending moves
+                  const { moves } = get();
+
+                  // Remove the last optimistic move
+                  const rolledBackMoves = moves.slice(0, -1);
+
+                  // We need to reconstruct the game state without the failed move
+                  // For now, request fresh state from server by clearing error
+                  // The server will send updated GAME_STATE
+                  set({
+                    moves: rolledBackMoves,
+                    pendingMoves: pendingMoves.slice(0, -1),
+                    error:
+                      moveResultPayload.error || "Move was rejected by server",
+                  });
+                } else {
+                  set({ error: moveResultPayload.error || "Invalid move" });
+                }
               }
               break;
             }
@@ -624,7 +760,7 @@ export const useGameStore = create<GameStore>()(
             }
 
             case "ERROR":
-              set({ error: message.payload.message });
+              set({ error: (message.payload as ErrorPayload).message });
               break;
 
             default:

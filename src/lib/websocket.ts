@@ -107,8 +107,16 @@ export class GameWebSocket {
     }
   }
 
-  makeMove(boardIndex: number, cellIndex: number): boolean {
-    const payload: MakeMovePayload = { boardIndex, cellIndex };
+  makeMove(
+    boardIndex: number,
+    cellIndex: number,
+    sequenceNumber?: number
+  ): boolean {
+    const payload: MakeMovePayload = {
+      boardIndex,
+      cellIndex,
+      ...(sequenceNumber !== undefined && { sequenceNumber }),
+    };
     return this.send({
       type: "MAKE_MOVE",
       payload,

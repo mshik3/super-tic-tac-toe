@@ -10,8 +10,10 @@ import type {
 	ErrorPayload,
 	GameState,
 	PlayerSymbol,
+	StoredMove,
 } from '../types/messages';
 import { createNewGame, applyMove, createMove } from '../lib/gameEngine';
+import { moveToChessNotation } from '../lib/chessNotation';
 
 export class GameSession extends DurableObject<Env> {
 	private gameState: GameState | null = null;
@@ -19,9 +21,45 @@ export class GameSession extends DurableObject<Env> {
 	private gameId: string = '';
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
 	private cleanupAlarmId: string | null = null;
+	private moves: StoredMove[] = [];
+	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+	}
+
+	// Move storage methods
+	private async loadMoves(): Promise<StoredMove[]> {
+		try {
+			const stored = await this.ctx.storage.get<StoredMove[]>('moves');
+			return stored || [];
+		} catch (error) {
+			console.error('Error loading moves:', error);
+			return [];
+		}
+	}
+
+	private async saveMoves(): Promise<void> {
+		try {
+			await this.ctx.storage.put('moves', this.moves);
+		} catch (error) {
+			console.error('Error saving moves:', error);
+		}
+	}
+
+	private async addMove(move: StoredMove): Promise<void> {
+		this.moves.push(move);
+		await this.saveMoves();
+	}
+
+	private async initializeGameSession(gameId: string): Promise<void> {
+		this.gameId = gameId;
+		this.moves = await this.loadMoves();
+
+		// If no moves exist, this is a new game
+		if (this.moves.length === 0) {
+			this.gameState = createNewGame(gameId);
+		}
 	}
 
 	// Security: Rate limiting for moves to prevent spam
@@ -77,8 +115,7 @@ export class GameSession extends DurableObject<Env> {
 
 			// Initialize game if not exists
 			if (!this.gameState) {
-				this.gameState = createNewGame(gameId);
-				this.gameId = gameId;
+				await this.initializeGameSession(gameId);
 			}
 
 			// Determine player symbol based on connection order
@@ -108,8 +145,8 @@ export class GameSession extends DurableObject<Env> {
 			this.cancelCleanupAlarm();
 
 			// Set up WebSocket message handler
-			server.addEventListener('message', (event) => {
-				this.handleWebSocketMessage(playerId, event.data);
+			server.addEventListener('message', async (event) => {
+				await this.handleWebSocketMessage(playerId, event.data);
 			});
 
 			// Set up WebSocket close handler
@@ -149,7 +186,7 @@ export class GameSession extends DurableObject<Env> {
 		return new Response('Not found', { status: 404 });
 	}
 
-	private handleWebSocketMessage(playerId: string, message: string) {
+	private async handleWebSocketMessage(playerId: string, message: string) {
 		try {
 			// Security: Limit message size to prevent memory exhaustion
 			if (message.length > 1024) {
@@ -179,7 +216,7 @@ export class GameSession extends DurableObject<Env> {
 						this.sendError(playerId, 'Too many requests');
 						return;
 					}
-					this.handleMakeMove(playerId, clientMessage.payload as MakeMovePayload);
+					await this.handleMakeMove(playerId, clientMessage.payload as MakeMovePayload);
 					break;
 				default:
 					this.sendError(playerId, 'Invalid request');
@@ -189,7 +226,7 @@ export class GameSession extends DurableObject<Env> {
 		}
 	}
 
-	private handleMakeMove(playerId: string, payload: MakeMovePayload) {
+	private async handleMakeMove(playerId: string, payload: MakeMovePayload) {
 		const player = this.players.get(playerId);
 		if (!player || !this.gameState) {
 			this.sendError(playerId, 'Invalid request');
@@ -202,7 +239,32 @@ export class GameSession extends DurableObject<Env> {
 			return;
 		}
 
-		const { boardIndex, cellIndex } = payload;
+		const { boardIndex, cellIndex, sequenceNumber } = payload;
+
+		// Validate sequence number if provided (for optimistic update validation)
+		if (sequenceNumber !== undefined) {
+			const expectedSequence = this.playerSequenceNumbers.get(playerId) || 0;
+			if (sequenceNumber <= expectedSequence) {
+				// This is a duplicate or out-of-order move
+				this.sendError(playerId, 'Duplicate or out-of-order move');
+				return;
+			}
+		}
+
+		// Check for duplicate moves in recent history (last 10 moves)
+		const recentMoves = this.moves.slice(-10);
+		const isDuplicate = recentMoves.some(
+			(storedMove) =>
+				storedMove.boardIndex === boardIndex &&
+				storedMove.cellIndex === cellIndex &&
+				storedMove.player === player.symbol &&
+				Date.now() - storedMove.timestamp < 5000 // Within 5 seconds
+		);
+
+		if (isDuplicate) {
+			this.sendError(playerId, 'Duplicate move detected');
+			return;
+		}
 
 		// Security: Strict bounds checking for board and cell indices
 		if (
@@ -253,12 +315,32 @@ export class GameSession extends DurableObject<Env> {
 		// Update game state
 		this.gameState = result.newGameState!;
 
+		// Create and store the move
+		const notation = moveToChessNotation(move);
+		const storedMove: StoredMove = {
+			notation,
+			player: move.player,
+			moveNumber: this.moves.length + 1,
+			timestamp: move.timestamp,
+			boardIndex: move.boardIndex,
+			cellIndex: move.cellIndex,
+		};
+
+		// Store move persistently
+		await this.addMove(storedMove);
+
+		// Update sequence number tracking for this player
+		if (sequenceNumber !== undefined) {
+			this.playerSequenceNumbers.set(playerId, sequenceNumber);
+		}
+
 		// Send successful move result to all players
 		const moveResultPayload: MoveResultPayload = {
 			valid: true,
 			board: this.gameState.board,
 			currentPlayer: this.gameState.currentPlayer,
 			gameStatus: this.gameState.status,
+			move: storedMove,
 		};
 
 		this.broadcast({
@@ -410,6 +492,7 @@ export class GameSession extends DurableObject<Env> {
 			currentPlayer: this.gameState.currentPlayer,
 			status: this.gameState.status,
 			opponentConnected: this.getOpponentConnected(playerId),
+			moves: this.moves,
 		};
 
 		this.sendToPlayer(playerId, {
