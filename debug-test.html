@@ -477,7 +477,7 @@
             log(playerId, `Polling error: ${error.message}`, "error");
             clearInterval(pollInterval);
           }
-                 }, 500); // Poll every 500ms for faster race condition testing
+        }, 500); // Poll every 500ms for faster race condition testing
       }
 
       function connectWebSocket(playerId) {
