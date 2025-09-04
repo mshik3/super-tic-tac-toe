@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Super Tic-Tac-Toe Debug Tool</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .player-panel {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .player-panel h2 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 2px solid #007bff;
+        padding-bottom: 10px;
+      }
+      .status {
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-weight: bold;
+      }
+      .status.connected {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .status.connecting {
+        background-color: #fff3cd;
+        color: #856404;
+      }
+      .status.disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .status.error {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .btn-primary {
+        background-color: #007bff;
+        color: white;
+      }
+      .btn-success {
+        background-color: #28a745;
+        color: white;
+      }
+      .btn-danger {
+        background-color: #dc3545;
+        color: white;
+      }
+      .btn-warning {
+        background-color: #ffc107;
+        color: black;
+      }
+      button:hover {
+        opacity: 0.8;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .log {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        height: 200px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .game-info {
+        background-color: #e7f3ff;
+        border: 1px solid #b3d4fc;
+        border-radius: 4px;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      .controls {
+        margin: 10px 0;
+      }
+      .queue-status {
+        background-color: #f0f8ff;
+        border: 1px solid #4dabf7;
+        border-radius: 4px;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      input[type="text"] {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin: 5px;
+        width: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎮 Super Tic-Tac-Toe Production Debug Tool</h1>
+    <p>
+      <strong>Production URL:</strong>
+      <a href="https://super-tic-tac-toe-76l.pages.dev/" target="_blank"
+        >https://super-tic-tac-toe-76l.pages.dev/</a
+      >
+    </p>
+    <div
+      style="
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 4px;
+        padding: 10px;
+        margin: 10px 0;
+      "
+    >
+      <strong>📋 Instructions:</strong>
+      <ul style="margin: 5px 0; padding-left: 20px">
+        <li>
+          To avoid CORS issues, serve this file from:
+          <code>http://localhost:8000/debug-test.html</code>
+        </li>
+        <li>
+          Use "🚨 Simulate Race Condition" to reproduce the reported issue
+        </li>
+        <li>Check WebSocket connections after players are matched</li>
+        <li>Test moves between players to verify full connectivity</li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <!-- Player 1 Panel -->
+      <div class="player-panel">
+        <h2>🔵 Player 1</h2>
+
+        <div class="controls">
+          <input
+            type="text"
+            id="player1Id"
+            placeholder="Player 1 ID"
+            value="debug-player-1"
+          />
+          <button class="btn-primary" onclick="joinQueue(1)">Join Queue</button>
+          <button class="btn-danger" onclick="leaveQueue(1)">
+            Leave Queue
+          </button>
+        </div>
+
+        <div class="status disconnected" id="player1Status">Disconnected</div>
+
+        <div class="queue-status" id="player1Queue" style="display: none">
+          <strong>Queue Status:</strong>
+          <div>Position: <span id="player1Position">-</span></div>
+          <div>Wait Time: <span id="player1WaitTime">-</span></div>
+          <div>Players in Queue: <span id="player1PlayersInQueue">-</span></div>
+        </div>
+
+        <div class="game-info" id="player1Game" style="display: none">
+          <strong>Game Info:</strong>
+          <div>Game ID: <span id="player1GameId">-</span></div>
+          <div>Symbol: <span id="player1Symbol">-</span></div>
+          <div>
+            WebSocket Status: <span id="player1WsStatus">disconnected</span>
+          </div>
+          <button class="btn-success" onclick="connectWebSocket(1)">
+            Connect WebSocket
+          </button>
+          <button class="btn-danger" onclick="disconnectWebSocket(1)">
+            Disconnect WebSocket
+          </button>
+        </div>
+
+        <div class="controls">
+          <button class="btn-warning" onclick="testMove(1, 0, 0)">
+            Test Move (0,0)
+          </button>
+          <button class="btn-warning" onclick="testMove(1, 1, 1)">
+            Test Move (1,1)
+          </button>
+        </div>
+
+        <h4>Log:</h4>
+        <div class="log" id="player1Log"></div>
+      </div>
+
+      <!-- Player 2 Panel -->
+      <div class="player-panel">
+        <h2>🔴 Player 2</h2>
+
+        <div class="controls">
+          <input
+            type="text"
+            id="player2Id"
+            placeholder="Player 2 ID"
+            value="debug-player-2"
+          />
+          <button class="btn-primary" onclick="joinQueue(2)">Join Queue</button>
+          <button class="btn-danger" onclick="leaveQueue(2)">
+            Leave Queue
+          </button>
+        </div>
+
+        <div class="status disconnected" id="player2Status">Disconnected</div>
+
+        <div class="queue-status" id="player2Queue" style="display: none">
+          <strong>Queue Status:</strong>
+          <div>Position: <span id="player2Position">-</span></div>
+          <div>Wait Time: <span id="player2WaitTime">-</span></div>
+          <div>Players in Queue: <span id="player2PlayersInQueue">-</span></div>
+        </div>
+
+        <div class="game-info" id="player2Game" style="display: none">
+          <strong>Game Info:</strong>
+          <div>Game ID: <span id="player2GameId">-</span></div>
+          <div>Symbol: <span id="player2Symbol">-</span></div>
+          <div>
+            WebSocket Status: <span id="player2WsStatus">disconnected</span>
+          </div>
+          <button class="btn-success" onclick="connectWebSocket(2)">
+            Connect WebSocket
+          </button>
+          <button class="btn-danger" onclick="disconnectWebSocket(2)">
+            Disconnect WebSocket
+          </button>
+        </div>
+
+        <div class="controls">
+          <button class="btn-warning" onclick="testMove(2, 0, 1)">
+            Test Move (0,1)
+          </button>
+          <button class="btn-warning" onclick="testMove(2, 1, 0)">
+            Test Move (1,0)
+          </button>
+        </div>
+
+        <h4>Log:</h4>
+        <div class="log" id="player2Log"></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; text-align: center">
+      <button class="btn-primary" onclick="getGlobalQueueStatus()">
+        Get Global Queue Status
+      </button>
+      <button class="btn-warning" onclick="simulateRaceCondition()">
+        🚨 Simulate Race Condition
+      </button>
+      <button class="btn-danger" onclick="clearAllLogs()">
+        Clear All Logs
+      </button>
+    </div>
+
+    <script>
+      // Worker URL - will work from localhost:8000 or production
+      const WORKER_BASE_URL =
+        "https://super-tic-tac-toe-worker.mshik3.workers.dev";
+
+      function getWorkerURL(endpoint) {
+        return WORKER_BASE_URL + endpoint;
+      }
+
+      // Player state
+      const players = {
+        1: { gameId: null, symbol: null, ws: null },
+        2: { gameId: null, symbol: null, ws: null },
+      };
+
+      function log(playerId, message, type = "info") {
+        const logElement = document.getElementById(`player${playerId}Log`);
+        const timestamp = new Date().toLocaleTimeString();
+        const color =
+          type === "error"
+            ? "red"
+            : type === "success"
+            ? "green"
+            : type === "warning"
+            ? "orange"
+            : "black";
+        logElement.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+        logElement.scrollTop = logElement.scrollHeight;
+        console.log(`Player ${playerId}: ${message}`);
+      }
+
+      function updateStatus(playerId, status, className = "") {
+        const statusElement = document.getElementById(
+          `player${playerId}Status`
+        );
+        statusElement.textContent = status;
+        statusElement.className = `status ${className || status.toLowerCase()}`;
+      }
+
+      async function joinQueue(playerId) {
+        const playerIdInput = document.getElementById(
+          `player${playerId}Id`
+        ).value;
+        if (!playerIdInput) {
+          log(playerId, "Please enter a player ID", "error");
+          return;
+        }
+
+        try {
+          updateStatus(playerId, "Joining queue...", "connecting");
+          log(playerId, `Joining queue with ID: ${playerIdInput}`);
+
+          const response = await fetch(getWorkerURL("/queue/join"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId: playerIdInput }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const result = await response.json();
+          log(playerId, `Queue response: ${JSON.stringify(result)}`);
+
+          if (result.matched) {
+            // Game found
+            players[playerId].gameId = result.gameId;
+            players[playerId].symbol = result.yourSymbol;
+
+            updateStatus(playerId, "Game Found!", "connected");
+            showGameInfo(playerId, result.gameId, result.yourSymbol);
+            log(
+              playerId,
+              `Game found! ID: ${result.gameId}, Symbol: ${result.yourSymbol}`,
+              "success"
+            );
+
+            // Hide queue status
+            document.getElementById(`player${playerId}Queue`).style.display =
+              "none";
+          } else {
+            // Still in queue
+            updateStatus(playerId, "In Queue", "connecting");
+            showQueueStatus(playerId, result);
+            log(
+              playerId,
+              `In queue - Position: ${result.position}, Wait: ${result.estimatedWaitTime}s`
+            );
+
+            // Start polling for updates
+            startPolling(playerId, playerIdInput);
+          }
+        } catch (error) {
+          log(playerId, `Error joining queue: ${error.message}`, "error");
+          updateStatus(playerId, "Error", "error");
+        }
+      }
+
+      async function leaveQueue(playerId) {
+        const playerIdInput = document.getElementById(
+          `player${playerId}Id`
+        ).value;
+
+        try {
+          log(playerId, "Leaving queue...");
+
+          const response = await fetch(getWorkerURL("/queue/leave"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId: playerIdInput }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const result = await response.json();
+          log(playerId, `Left queue: ${JSON.stringify(result)}`);
+
+          updateStatus(playerId, "Disconnected", "disconnected");
+          hideQueueStatus(playerId);
+          hideGameInfo(playerId);
+
+          // Disconnect WebSocket if connected
+          if (players[playerId].ws) {
+            disconnectWebSocket(playerId);
+          }
+
+          // Clear player state
+          players[playerId] = { gameId: null, symbol: null, ws: null };
+        } catch (error) {
+          log(playerId, `Error leaving queue: ${error.message}`, "error");
+        }
+      }
+
+      function showQueueStatus(playerId, queueData) {
+        const queueElement = document.getElementById(`player${playerId}Queue`);
+        queueElement.style.display = "block";
+
+        document.getElementById(`player${playerId}Position`).textContent =
+          queueData.position || "-";
+        document.getElementById(`player${playerId}WaitTime`).textContent =
+          queueData.estimatedWaitTime ? `${queueData.estimatedWaitTime}s` : "-";
+        document.getElementById(`player${playerId}PlayersInQueue`).textContent =
+          queueData.playersInQueue || "-";
+      }
+
+      function hideQueueStatus(playerId) {
+        document.getElementById(`player${playerId}Queue`).style.display =
+          "none";
+      }
+
+      function showGameInfo(playerId, gameId, symbol) {
+        const gameElement = document.getElementById(`player${playerId}Game`);
+        gameElement.style.display = "block";
+
+        document.getElementById(`player${playerId}GameId`).textContent = gameId;
+        document.getElementById(`player${playerId}Symbol`).textContent = symbol;
+      }
+
+      function hideGameInfo(playerId) {
+        document.getElementById(`player${playerId}Game`).style.display = "none";
+      }
+
+      async function startPolling(playerId, playerIdInput) {
+        const pollInterval = setInterval(async () => {
+          try {
+            const response = await fetch(getWorkerURL("/queue/join"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: playerIdInput }),
+            });
+
+            if (!response.ok) {
+              throw new Error(
+                `HTTP ${response.status}: ${response.statusText}`
+              );
+            }
+
+            const result = await response.json();
+
+            if (result.matched) {
+              clearInterval(pollInterval);
+              players[playerId].gameId = result.gameId;
+              players[playerId].symbol = result.yourSymbol;
+
+              updateStatus(playerId, "Game Found!", "connected");
+              showGameInfo(playerId, result.gameId, result.yourSymbol);
+              hideQueueStatus(playerId);
+              log(
+                playerId,
+                `Game found via polling! ID: ${result.gameId}, Symbol: ${result.yourSymbol}`,
+                "success"
+              );
+            } else {
+              showQueueStatus(playerId, result);
+              log(
+                playerId,
+                `Poll update - Position: ${result.position}, Wait: ${result.estimatedWaitTime}s`
+              );
+            }
+          } catch (error) {
+            log(playerId, `Polling error: ${error.message}`, "error");
+            clearInterval(pollInterval);
+          }
+                 }, 500); // Poll every 500ms for faster race condition testing
+      }
+
+      function connectWebSocket(playerId) {
+        if (!players[playerId].gameId) {
+          log(
+            playerId,
+            "No game ID available for WebSocket connection",
+            "error"
+          );
+          return;
+        }
+
+        const playerIdInput = document.getElementById(
+          `player${playerId}Id`
+        ).value;
+        const wsUrl = `wss://super-tic-tac-toe-worker.mshik3.workers.dev/game?gameId=${players[playerId].gameId}&playerId=${playerIdInput}`;
+        // Note: WebSocket connections can't use CORS proxy, so we use direct connection
+
+        log(playerId, `Connecting to WebSocket: ${wsUrl}`);
+
+        try {
+          players[playerId].ws = new WebSocket(wsUrl);
+
+          players[playerId].ws.onopen = () => {
+            log(playerId, "WebSocket connected", "success");
+            document.getElementById(`player${playerId}WsStatus`).textContent =
+              "connected";
+          };
+
+          players[playerId].ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            log(playerId, `WebSocket message: ${JSON.stringify(message)}`);
+          };
+
+          players[playerId].ws.onclose = (event) => {
+            log(
+              playerId,
+              `WebSocket closed: ${event.code} - ${event.reason}`,
+              "warning"
+            );
+            document.getElementById(`player${playerId}WsStatus`).textContent =
+              "disconnected";
+          };
+
+          players[playerId].ws.onerror = (error) => {
+            log(playerId, `WebSocket error: ${error}`, "error");
+            document.getElementById(`player${playerId}WsStatus`).textContent =
+              "error";
+          };
+        } catch (error) {
+          log(
+            playerId,
+            `Failed to create WebSocket: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      function disconnectWebSocket(playerId) {
+        if (players[playerId].ws) {
+          players[playerId].ws.close();
+          players[playerId].ws = null;
+          log(playerId, "WebSocket disconnected");
+          document.getElementById(`player${playerId}WsStatus`).textContent =
+            "disconnected";
+        }
+      }
+
+      function testMove(playerId, boardIndex, cellIndex) {
+        if (
+          !players[playerId].ws ||
+          players[playerId].ws.readyState !== WebSocket.OPEN
+        ) {
+          log(playerId, "WebSocket not connected - cannot send move", "error");
+          return;
+        }
+
+        const moveMessage = {
+          type: "MAKE_MOVE",
+          payload: { boardIndex, cellIndex },
+        };
+
+        players[playerId].ws.send(JSON.stringify(moveMessage));
+        log(playerId, `Sent move: board ${boardIndex}, cell ${cellIndex}`);
+      }
+
+      async function getGlobalQueueStatus() {
+        try {
+          const response = await fetch(getWorkerURL("/queue/status"));
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const status = await response.json();
+          console.log("Global Queue Status:", status);
+          alert(
+            `Global Queue Status:\nPlayers in Queue: ${status.playersInQueue}\nAverage Wait Time: ${status.averageWaitTime}s`
+          );
+        } catch (error) {
+          console.error("Error getting queue status:", error);
+          alert(`Error: ${error.message}`);
+        }
+      }
+
+      async function simulateRaceCondition() {
+        log(1, "🚨 Starting race condition simulation...", "warning");
+        log(2, "🚨 Starting race condition simulation...", "warning");
+
+        // Reset player IDs for clean test
+        document.getElementById(
+          "player1Id"
+        ).value = `race-player-1-${Date.now()}`;
+        document.getElementById(
+          "player2Id"
+        ).value = `race-player-2-${Date.now()}`;
+
+        // Player 1 joins queue first
+        await joinQueue(1);
+
+        // Small delay, then Player 2 joins
+        setTimeout(async () => {
+          await joinQueue(2);
+        }, 500);
+      }
+
+      function clearAllLogs() {
+        document.getElementById("player1Log").innerHTML = "";
+        document.getElementById("player2Log").innerHTML = "";
+      }
+
+      // Initialize
+      log(1, "Debug tool initialized");
+      log(2, "Debug tool initialized");
+    </script>
+  </body>
+</html>

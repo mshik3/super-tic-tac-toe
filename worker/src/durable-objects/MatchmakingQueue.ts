@@ -315,7 +315,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		try {
 			const now = Date.now();
 			const maxWaitTime = 5 * 60 * 1000; // 5 minutes
-			const matchedPlayerTimeout = 10 * 60 * 1000; // 10 minutes for matched players
+			const matchedPlayerTimeout = 30 * 60 * 1000; // 30 minutes for matched players (increased reliability)
 			const rateLimitTimeout = 60 * 1000; // 1 minute for rate limits
 
 			// Clean stale queue entries

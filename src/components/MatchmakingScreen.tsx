@@ -19,7 +19,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   );
   const [playersInQueue, setPlayersInQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [backoffDelay, setBackoffDelay] = useState<number>(15000); // Start with 15 seconds
+  const [backoffDelay, setBackoffDelay] = useState<number>(1000); // Start with 1 second for faster matching
   const [consecutiveFailures, setConsecutiveFailures] = useState<number>(0);
   const [isCircuitBreakerOpen, setIsCircuitBreakerOpen] =
     useState<boolean>(false);
@@ -143,7 +143,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
                 }
               }
             }
-          }, backoffDelay);
+          }, Math.max(backoffDelay, 500)); // Ensure minimum 500ms polling for responsiveness
         };
 
         startPolling();
