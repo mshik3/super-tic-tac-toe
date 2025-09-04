@@ -321,7 +321,7 @@ export const useGameStore = create<GameStore>()(
 
               case "MOVE_RESULT": {
                 const moveResultPayload = message.payload as MoveResultPayload;
-                const { pendingMoves } = get();
+                const { pendingMoves, moves } = get();
 
                 if (moveResultPayload.valid) {
                   // Server confirmed the move - remove from pending moves
@@ -338,9 +338,41 @@ export const useGameStore = create<GameStore>()(
                     lastMove: Date.now(),
                   };
 
+                  // Process the move for logging (ensures both players see all moves)
+                  let updatedMoves = moves;
+                  if (moveResultPayload.move) {
+                    // Convert StoredMove to GameMove format
+                    const gameMove: GameMove = {
+                      notation: moveResultPayload.move.notation,
+                      player: moveResultPayload.move.player,
+                      moveNumber: moveResultPayload.move.moveNumber,
+                      timestamp: moveResultPayload.move.timestamp,
+                    };
+
+                    // Check if this move is already in our log (from optimistic update)
+                    const moveExists = moves.some(
+                      (m) =>
+                        m.moveNumber === gameMove.moveNumber &&
+                        m.player === gameMove.player &&
+                        m.notation === gameMove.notation
+                    );
+
+                    if (!moveExists) {
+                      // This is an opponent's move, add it to our log
+                      updatedMoves = [...moves, gameMove];
+                      console.log("Added opponent move to log:", gameMove);
+                    } else {
+                      console.log(
+                        "Move already in log (own move confirmed):",
+                        gameMove
+                      );
+                    }
+                  }
+
                   // The move was already optimistically applied, just confirm it
                   set({
                     gameState: updatedGameState,
+                    moves: updatedMoves,
                     pendingMoves: updatedPendingMoves,
                     error: null,
                   });
@@ -494,6 +526,7 @@ export const useGameStore = create<GameStore>()(
             };
 
             // Update state with optimistic move
+            console.log("Adding own move to log (optimistic):", gameMove);
             set({
               gameState: result.newGameState,
               moves: [...moves, gameMove],
@@ -695,7 +728,7 @@ export const useGameStore = create<GameStore>()(
 
             case "MOVE_RESULT": {
               const moveResultPayload = message.payload as MoveResultPayload;
-              const { pendingMoves } = get();
+              const { pendingMoves, moves } = get();
 
               if (moveResultPayload.valid) {
                 // Server confirmed the move - remove from pending moves
@@ -712,9 +745,41 @@ export const useGameStore = create<GameStore>()(
                   lastMove: Date.now(),
                 };
 
+                // Process the move for logging (ensures both players see all moves)
+                let updatedMoves = moves;
+                if (moveResultPayload.move) {
+                  // Convert StoredMove to GameMove format
+                  const gameMove: GameMove = {
+                    notation: moveResultPayload.move.notation,
+                    player: moveResultPayload.move.player,
+                    moveNumber: moveResultPayload.move.moveNumber,
+                    timestamp: moveResultPayload.move.timestamp,
+                  };
+
+                  // Check if this move is already in our log (from optimistic update)
+                  const moveExists = moves.some(
+                    (m) =>
+                      m.moveNumber === gameMove.moveNumber &&
+                      m.player === gameMove.player &&
+                      m.notation === gameMove.notation
+                  );
+
+                  if (!moveExists) {
+                    // This is an opponent's move, add it to our log
+                    updatedMoves = [...moves, gameMove];
+                    console.log("Added opponent move to log:", gameMove);
+                  } else {
+                    console.log(
+                      "Move already in log (own move confirmed):",
+                      gameMove
+                    );
+                  }
+                }
+
                 // The move was already optimistically applied, just confirm it
                 set({
                   gameState: updatedGameState,
+                  moves: updatedMoves,
                   pendingMoves: updatedPendingMoves,
                   error: null,
                 });
