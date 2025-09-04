@@ -118,28 +118,41 @@ export class GameSession extends DurableObject<Env> {
 				await this.initializeGameSession(gameId);
 			}
 
-			// Determine player symbol based on connection order
+			// Check if this player is reconnecting to an existing game
+			const existingPlayer = this.players.get(playerId);
 			let playerSymbol: PlayerSymbol;
-			if (this.players.size === 0) {
-				playerSymbol = 'X'; // First player is X
-			} else if (this.players.size === 1) {
-				playerSymbol = 'O'; // Second player is O
+
+			if (existingPlayer) {
+				// Player is reconnecting - preserve their symbol and update connection
+				playerSymbol = existingPlayer.symbol;
+				existingPlayer.websocket = server;
+				existingPlayer.connected = true;
+				existingPlayer.lastPing = Date.now();
+				console.log(`Player ${playerId} reconnected with symbol ${playerSymbol}`);
 			} else {
-				// Game is full (should not happen with size check, but safety)
-				server.close(1008, 'Game is full');
-				return new Response(null, { status: 400 });
+				// New player joining - determine symbol based on connection order
+				if (this.players.size === 0) {
+					playerSymbol = 'X'; // First player is X
+				} else if (this.players.size === 1) {
+					playerSymbol = 'O'; // Second player is O
+				} else {
+					// Game is full (should not happen with size check, but safety)
+					server.close(1008, 'Game is full');
+					return new Response(null, { status: 400 });
+				}
+
+				// Add new player connection
+				const playerConnection: PlayerConnection = {
+					playerId,
+					symbol: playerSymbol,
+					websocket: server,
+					connected: true,
+					lastPing: Date.now(),
+				};
+
+				this.players.set(playerId, playerConnection);
+				console.log(`New player ${playerId} joined with symbol ${playerSymbol}`);
 			}
-
-			// Add player connection
-			const playerConnection: PlayerConnection = {
-				playerId,
-				symbol: playerSymbol,
-				websocket: server,
-				connected: true,
-				lastPing: Date.now(),
-			};
-
-			this.players.set(playerId, playerConnection);
 
 			// Cancel cleanup alarm since we have an active player
 			this.cancelCleanupAlarm();
@@ -374,8 +387,21 @@ export class GameSession extends DurableObject<Env> {
 			// Notify other players about disconnection
 			this.broadcastGameState();
 
-			// Security: Set up cleanup alarm for abandoned games
-			this.scheduleCleanupAlarm(120000); // 2 minutes
+			// Determine cleanup timeout based on connection state
+			const connectedPlayerCount = this.getConnectedPlayerCount();
+			let cleanupTimeout: number;
+
+			if (connectedPlayerCount === 0) {
+				// Both players disconnected - cleanup in 1 minute
+				cleanupTimeout = 60000; // 1 minute
+				console.log('Both players disconnected, scheduling 1-minute cleanup');
+			} else {
+				// One player still connected - cleanup in 10 minutes
+				cleanupTimeout = 600000; // 10 minutes
+				console.log('One player disconnected, scheduling 10-minute cleanup');
+			}
+
+			this.scheduleCleanupAlarm(cleanupTimeout);
 		}
 	}
 
@@ -383,7 +409,8 @@ export class GameSession extends DurableObject<Env> {
 	private cleanupStaleConnections() {
 		try {
 			const now = Date.now();
-			const staleTimeout = 120000; // 2 minutes (reduced from 5 minutes)
+			// Use 10 minutes for stale timeout to match our new policy
+			const staleTimeout = 600000; // 10 minutes
 
 			for (const [playerId, player] of this.players) {
 				if (!player.connected && now - player.lastPing > staleTimeout) {
@@ -474,7 +501,8 @@ export class GameSession extends DurableObject<Env> {
 				this.cleanupStaleConnections();
 			} else {
 				console.log('Connected players found, rescheduling cleanup alarm');
-				this.scheduleCleanupAlarm(120000); // Reschedule for 2 minutes
+				// Use 10-minute timeout since at least one player is connected
+				this.scheduleCleanupAlarm(600000); // Reschedule for 10 minutes
 			}
 		} catch (error) {
 			console.error('Error in alarm handler:', error);
@@ -505,6 +533,16 @@ export class GameSession extends DurableObject<Env> {
 		this.players.forEach((_, playerId) => {
 			this.sendGameStateToPlayer(playerId);
 		});
+	}
+
+	private getConnectedPlayerCount(): number {
+		let count = 0;
+		for (const player of this.players.values()) {
+			if (player.connected) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private getOpponentConnected(playerId: string): boolean {
