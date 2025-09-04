@@ -671,8 +671,8 @@ export const useGameStore = create<GameStore>()(
                 lastMove: Date.now(),
               };
 
-              // Convert StoredMove[] to GameMove[] for consistency
-              const gameMoves: GameMove[] = gameStatePayload.moves.map(
+              // Convert StoredMove[] to GameMove[] for consistency (backward compatible)
+              const gameMoves: GameMove[] = (gameStatePayload.moves || []).map(
                 (storedMove: StoredMove) => ({
                   notation: storedMove.notation,
                   player: storedMove.player,

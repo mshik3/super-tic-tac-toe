@@ -61,7 +61,7 @@ export interface GameStatePayload {
   currentPlayer: PlayerSymbol;
   status: GameStatus;
   opponentConnected: boolean;
-  moves: StoredMove[];
+  moves?: StoredMove[]; // Optional for backward compatibility
 }
 
 export interface MoveResultPayload {
