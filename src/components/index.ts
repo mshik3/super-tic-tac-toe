@@ -5,3 +5,6 @@ export { GameBoard } from "./GameBoard";
 export { GameScreen } from "./GameScreen";
 export { Instructions } from "./Instructions";
 export { MoveLog } from "./MoveLog";
+export { MainMenu } from "./MainMenu";
+export { MatchmakingScreen } from "./MatchmakingScreen";
+export { ConnectionStatus } from "./ConnectionStatus";

@@ -45,10 +45,6 @@ export function moveToChessNotation(move: Move): string {
 export function chessNotationToMove(
   notation: string
 ): { boardIndex: number; cellIndex: number } | null {
-  // Find where board notation ends and cell notation begins
-  let boardPart = "";
-  let cellPart = "";
-
   // Try different splits to find valid board/cell combination
   for (let i = 1; i <= notation.length - 1; i++) {
     const potentialBoard = notation.substring(0, i);

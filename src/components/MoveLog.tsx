@@ -58,7 +58,7 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
             </div>
           ) : (
             <div className="space-y-1">
-              {moves.map((move, index) => (
+              {moves.map((move) => (
                 <div
                   key={`${move.moveNumber}-${move.player}`}
                   className={clsx(
