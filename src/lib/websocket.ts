@@ -248,6 +248,11 @@ export class GameAPIClient {
             "Server is temporarily unavailable. Please try again in a moment."
           );
         }
+        if (response.status === 429) {
+          throw new Error(
+            "Too many requests. Please wait a moment and try again."
+          );
+        }
         throw new Error(
           `Failed to get queue status: ${
             response.statusText || "Unknown error"

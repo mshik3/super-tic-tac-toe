@@ -1,0 +1,47 @@
+name: PR Quality Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-check:
+    name: Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Type check frontend
+        run: npx tsc --noEmit
+
+      - name: Build frontend (test)
+        run: npm run build
+        env:
+          VITE_WORKER_URL: https://super-tic-tac-toe-worker.mshik3.workers.dev
+
+      - name: Install worker dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: Type check worker
+        working-directory: ./worker
+        run: npx tsc --noEmit
+
+      - name: PR Quality Check Complete
+        run: |
+          echo "✅ All quality checks passed!"
+          echo "🚀 Ready for deployment once merged to main"

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:worker": "cd worker && npm run deploy",
+    "deploy:all": "npm run build && npm run deploy:worker"
   },
   "dependencies": {
     "@types/node": "^24.3.0",

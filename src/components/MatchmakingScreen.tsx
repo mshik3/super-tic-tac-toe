@@ -19,12 +19,19 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   );
   const [playersInQueue, setPlayersInQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backoffDelay, setBackoffDelay] = useState<number>(15000); // Start with 15 seconds
+  const [consecutiveFailures, setConsecutiveFailures] = useState<number>(0);
+  const [isCircuitBreakerOpen, setIsCircuitBreakerOpen] =
+    useState<boolean>(false);
+  const [, setRetryCountdown] = useState<number | null>(null);
 
   const apiClient = new GameAPIClient();
 
   useEffect(() => {
     let cancelled = false;
     let pollInterval: NodeJS.Timeout;
+    let countdownInterval: NodeJS.Timeout;
+    let retryTimeout: NodeJS.Timeout;
 
     const searchForGame = async () => {
       try {
@@ -47,33 +54,99 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
         setEstimatedWaitTime(result.estimatedWaitTime);
         setPlayersInQueue(result.playersInQueue);
 
-        // Poll for updates
-        pollInterval = setInterval(async () => {
-          try {
-            const queueStatus = await apiClient.getQueueStatus();
-            if (cancelled) return;
+        // Poll for updates with circuit breaker pattern
+        const startPolling = () => {
+          pollInterval = setInterval(async () => {
+            try {
+              // Check circuit breaker
+              if (isCircuitBreakerOpen) {
+                console.log("Circuit breaker is open, stopping polling");
+                clearInterval(pollInterval);
+                setStatus("error");
+                setError(
+                  "Too many connection failures. Please try again later."
+                );
+                return;
+              }
 
-            setPlayersInQueue(queueStatus.playersInQueue);
+              // Check if we've been matched by trying to join again
+              const joinResult = await apiClient.joinQueue(playerId);
+              if (cancelled) return;
 
-            // Check if we've been matched by trying to join again
-            const joinResult = await apiClient.joinQueue(playerId);
-            if (cancelled) return;
+              if (joinResult.matched) {
+                clearInterval(pollInterval);
+                onGameFound(joinResult.gameId, joinResult.yourSymbol);
+                return;
+              }
 
-            if (joinResult.matched) {
-              clearInterval(pollInterval);
-              onGameFound(joinResult.gameId, joinResult.yourSymbol);
-              return;
+              setQueuePosition(joinResult.position);
+              setEstimatedWaitTime(joinResult.estimatedWaitTime);
+              setPlayersInQueue(joinResult.playersInQueue);
+              setConsecutiveFailures(0); // Reset failure counter on success
+              setError(null);
+              setRetryCountdown(null);
+            } catch (error) {
+              console.error("Error polling queue:", error);
+              if (!cancelled) {
+                const newFailureCount = consecutiveFailures + 1;
+                setConsecutiveFailures(newFailureCount);
+
+                // Circuit breaker: stop after 5 consecutive failures
+                if (newFailureCount >= 5) {
+                  setIsCircuitBreakerOpen(true);
+                  clearInterval(pollInterval);
+                  setStatus("error");
+                  setError(
+                    "Too many connection failures. Please refresh the page and try again."
+                  );
+                  return;
+                }
+
+                // Check if it's a rate limit error (429)
+                if (
+                  error instanceof Error &&
+                  error.message.includes("Too many requests")
+                ) {
+                  const newBackoffDelay = Math.min(backoffDelay * 2, 60000); // Max 60 seconds
+                  setBackoffDelay(newBackoffDelay);
+                  setRetryCountdown(Math.ceil(newBackoffDelay / 1000));
+                  setError(
+                    `Rate limited. Retrying in ${Math.ceil(
+                      newBackoffDelay / 1000
+                    )}s...`
+                  );
+
+                  // Start countdown timer
+                  countdownInterval = setInterval(() => {
+                    setRetryCountdown((prev) => {
+                      if (prev === null || prev <= 1) {
+                        clearInterval(countdownInterval);
+                        return null;
+                      }
+                      const newCount = prev - 1;
+                      setError(`Rate limited. Retrying in ${newCount}s...`);
+                      return newCount;
+                    });
+                  }, 1000);
+
+                  // Clear current interval and restart with longer delay
+                  clearInterval(pollInterval);
+                  retryTimeout = setTimeout(() => {
+                    if (!cancelled && !isCircuitBreakerOpen) {
+                      startPolling();
+                    }
+                  }, newBackoffDelay);
+                } else {
+                  setError(
+                    `Connection error (${newFailureCount}/5). Retrying...`
+                  );
+                }
+              }
             }
+          }, backoffDelay);
+        };
 
-            setQueuePosition(joinResult.position);
-            setEstimatedWaitTime(joinResult.estimatedWaitTime);
-          } catch (error) {
-            console.error("Error polling queue:", error);
-            if (!cancelled) {
-              setError("Connection error. Retrying...");
-            }
-          }
-        }, 2000); // Poll every 2 seconds
+        startPolling();
       } catch (error) {
         console.error("Error joining queue:", error);
         if (!cancelled) {
@@ -91,6 +164,12 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
       cancelled = true;
       if (pollInterval) {
         clearInterval(pollInterval);
+      }
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
       }
     };
   }, [playerId, onGameFound]);

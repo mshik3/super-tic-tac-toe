@@ -1,69 +1,168 @@
-# React + TypeScript + Vite
+# Super Tic-Tac-Toe
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern, real-time multiplayer implementation of Ultimate Tic-Tac-Toe built with React, TypeScript, and Cloudflare Workers.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Real-time Multiplayer**: Play against opponents worldwide with WebSocket connections
+- **Ultimate Tic-Tac-Toe**: Strategic gameplay with nested boards
+- **Modern UI**: Beautiful, responsive interface built with React and Tailwind CSS
+- **Serverless Backend**: Powered by Cloudflare Workers and Durable Objects
+- **Simple Deployment**: Git-connected Cloudflare Pages with automatic builds
 
-## Expanding the ESLint configuration
+## 🛠️ Tech Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Zustand
+- **Backend**: Cloudflare Workers, Durable Objects, WebSockets
+- **Deployment**: Cloudflare Pages (Frontend), Cloudflare Workers (Backend)
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🚀 Quick Start
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+### Prerequisites
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- Node.js 20+
+- npm or yarn
+- Cloudflare account (for deployment)
+
+### Local Development
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <your-repo-url>
+   cd super-tic-tac-toe
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   # Frontend dependencies
+   npm install
+
+   # Worker dependencies
+   cd worker
+   npm install
+   cd ..
+   ```
+
+3. **Start development servers**
+
+   ```bash
+   # Terminal 1: Start frontend dev server
+   npm run dev
+
+   # Terminal 2: Start worker dev server
+   cd worker
+   npm run dev
+   ```
+
+4. **Open your browser**
+   - Frontend: http://localhost:5173
+   - Worker API: http://localhost:8787
+
+## 🚀 Deployment Setup
+
+This project uses **git-connected Cloudflare Pages** for the frontend and **Wrangler CLI** for the worker backend.
+
+### One-Time Setup: Connect GitHub to Cloudflare Pages
+
+1. **Push your code to GitHub** (if you haven't already)
+
+   ```bash
+   git add .
+   git commit -m "initial commit"
+   git push origin main
+   ```
+
+2. **Connect to Cloudflare Pages**
+
+   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → **Pages**
+   - Click **"Connect to Git"**
+   - Select your GitHub repository
+   - Configure build settings:
+     - **Build command**: `npm run build`
+     - **Build output directory**: `dist`
+     - **Root directory**: `/` (leave empty)
+   - Click **"Save and Deploy"**
+
+3. **Set up Worker deployment** (one-time)
+   ```bash
+   cd worker
+   npx wrangler login  # Login to your Cloudflare account
+   npm run deploy      # Deploy your worker
+   ```
+
+### Daily Workflow (Super Simple!)
+
+**Frontend changes:**
+
+```bash
+git add .
+git commit -m "update frontend"
+git push
+# ✨ Frontend auto-deploys to Cloudflare Pages!
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+**Worker changes:**
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Make your worker changes, then:
+npm run deploy:worker
+# Or deploy everything:
+npm run deploy:all
 ```
+
+**That's it!** No secrets, no complex CI/CD, no configuration files to maintain.
+
+## 📁 Project Structure
+
+```
+super-tic-tac-toe/
+├── src/                   # Frontend React app
+│   ├── components/        # React components
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/              # Utility libraries
+│   ├── store/            # Zustand state management
+│   └── types/            # TypeScript type definitions
+├── worker/               # Cloudflare Worker backend
+│   └── src/
+│       ├── durable-objects/  # Durable Objects (game sessions, matchmaking)
+│       ├── lib/             # Shared game logic
+│       └── types/           # Backend type definitions
+└── dist/                 # Built frontend (auto-generated by Cloudflare Pages)
+```
+
+## 🎮 How to Play
+
+1. **Start a Game**: Choose between local multiplayer or find an online opponent
+2. **Game Rules**: This is Ultimate Tic-Tac-Toe - win small boards to claim them in the big board
+3. **Strategic Play**: Your move determines which small board your opponent must play in next
+4. **Win Condition**: Get three small boards in a row on the big board to win!
+
+## 🔄 Deployment Pipeline
+
+Simple and automatic deployment:
+
+1. **Frontend**: Push to git → Cloudflare Pages auto-builds and deploys
+2. **Worker**: Run `npm run deploy:worker` when you change backend code
+3. **Quality**: Run `npm run lint` before committing (optional but recommended)
+
+### Available Scripts
+
+- `npm run dev` - Start frontend development server
+- `npm run build` - Build frontend for production
+- `npm run lint` - Check code quality
+- `npm run deploy:worker` - Deploy worker to Cloudflare
+- `npm run deploy:all` - Build frontend + deploy worker
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License.
