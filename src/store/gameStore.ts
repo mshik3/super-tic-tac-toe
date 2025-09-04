@@ -275,7 +275,7 @@ export const useGameStore = create<GameStore>()(
 
       handleServerMessage: (message: ServerMessage) => {
         switch (message.type) {
-          case "GAME_STATE":
+          case "GAME_STATE": {
             const gameStatePayload = message.payload as GameStatePayload;
 
             // Convert online game state to local format
@@ -297,8 +297,9 @@ export const useGameStore = create<GameStore>()(
             });
 
             break;
+          }
 
-          case "MOVE_RESULT":
+          case "MOVE_RESULT": {
             const moveResultPayload = message.payload as MoveResultPayload;
             if (moveResultPayload.valid) {
               // Update game state with the move result
@@ -320,8 +321,9 @@ export const useGameStore = create<GameStore>()(
               set({ error: moveResultPayload.error || "Invalid move" });
             }
             break;
+          }
 
-          case "GAME_OVER":
+          case "GAME_OVER": {
             const gameOverPayload = message.payload as GameOverPayload;
             const currentGameState = get().gameState;
             if (currentGameState) {
@@ -335,6 +337,7 @@ export const useGameStore = create<GameStore>()(
               });
             }
             break;
+          }
 
           case "ERROR":
             set({ error: message.payload.message });

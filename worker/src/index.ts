@@ -11,22 +11,37 @@ export default {
 	 * @param ctx - The execution context of the Worker
 	 * @returns The response to be sent back to the client
 	 */
-	async fetch(request, env, ctx): Promise<Response> {
+	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
-		// Security: Environment-specific CORS origins instead of wildcard
-		const allowedOrigins = [
-			'http://localhost:5173', // Vite dev server
-			'http://localhost:4173', // Vite preview
-			'https://super-tic-tac-toe.pages.dev', // Production domain (adjust as needed)
-			'https://your-domain.com', // Add your actual production domain
-		];
+		// Security: Environment-specific CORS origins from environment variables
+		const allowedOriginsStr = env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:4173,https://super-tic-tac-toe.pages.dev';
+		const allowedOrigins = allowedOriginsStr.split(',').map((origin: string) => origin.trim());
 
 		const origin = request.headers.get('Origin');
-		const isAllowedOrigin = origin && allowedOrigins.includes(origin);
+		console.log('CORS: Request origin:', origin);
+
+		// Enhanced origin matching with wildcard support
+		const isAllowedOrigin =
+			origin &&
+			allowedOrigins.some((allowed: string) => {
+				if (allowed.includes('*')) {
+					// Convert wildcard pattern to regex
+					const pattern = allowed.replace(/\*/g, '[a-zA-Z0-9-]+');
+					const regex = new RegExp(`^${pattern}$`);
+					return regex.test(origin);
+				}
+				return allowed === origin;
+			});
+
+		console.log('CORS: Origin allowed:', isAllowedOrigin);
 
 		const corsHeaders = {
-			'Access-Control-Allow-Origin': isAllowedOrigin ? origin : allowedOrigins[0],
+			'Access-Control-Allow-Origin': isAllowedOrigin
+				? origin
+				: origin?.includes('localhost')
+				? origin
+				: 'https://super-tic-tac-toe.pages.dev',
 			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
 			'Access-Control-Max-Age': '86400', // 24 hours cache for preflight

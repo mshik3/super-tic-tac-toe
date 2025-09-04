@@ -153,45 +153,117 @@ export class GameAPIClient {
   }
 
   async joinQueue(playerId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/queue/join`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ playerId }),
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}/queue/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ playerId }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to join queue: ${response.statusText}`);
+      if (!response.ok) {
+        // Enhanced error handling for different HTTP status codes
+        if (response.status === 0 || !response.status) {
+          throw new Error(
+            "Network connection failed. Please check your internet connection and try again."
+          );
+        }
+        if (response.status >= 500) {
+          throw new Error(
+            "Server is temporarily unavailable. Please try again in a moment."
+          );
+        }
+        if (response.status === 429) {
+          throw new Error(
+            "Too many requests. Please wait a moment and try again."
+          );
+        }
+        throw new Error(
+          `Failed to join queue: ${response.statusText || "Unknown error"}`
+        );
+      }
+
+      return response.json();
+    } catch (error) {
+      // Handle network errors (CORS, DNS, connection issues)
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw new Error(
+          "Unable to connect to game server. This may be due to network issues or server maintenance."
+        );
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   async leaveQueue(playerId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/queue/leave`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ playerId }),
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}/queue/leave`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ playerId }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to leave queue: ${response.statusText}`);
+      if (!response.ok) {
+        if (response.status === 0 || !response.status) {
+          throw new Error(
+            "Network connection failed. Please check your internet connection and try again."
+          );
+        }
+        if (response.status >= 500) {
+          throw new Error(
+            "Server is temporarily unavailable. Please try again in a moment."
+          );
+        }
+        throw new Error(
+          `Failed to leave queue: ${response.statusText || "Unknown error"}`
+        );
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw new Error(
+          "Unable to connect to game server. This may be due to network issues or server maintenance."
+        );
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   async getQueueStatus(): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/queue/status`);
+    try {
+      const response = await fetch(`${this.baseUrl}/queue/status`);
 
-    if (!response.ok) {
-      throw new Error(`Failed to get queue status: ${response.statusText}`);
+      if (!response.ok) {
+        if (response.status === 0 || !response.status) {
+          throw new Error(
+            "Network connection failed. Please check your internet connection and try again."
+          );
+        }
+        if (response.status >= 500) {
+          throw new Error(
+            "Server is temporarily unavailable. Please try again in a moment."
+          );
+        }
+        throw new Error(
+          `Failed to get queue status: ${
+            response.statusText || "Unknown error"
+          }`
+        );
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw new Error(
+          "Unable to connect to game server. This may be due to network issues or server maintenance."
+        );
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   getWebSocketUrl(gameId: string, playerId: string): string {
@@ -202,14 +274,40 @@ export class GameAPIClient {
   }
 
   async getGameInfo(gameId: string): Promise<any> {
-    const response = await fetch(
-      `${this.baseUrl}/game/game-info?gameId=${gameId}`
-    );
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/game/game-info?gameId=${gameId}`
+      );
 
-    if (!response.ok) {
-      throw new Error(`Failed to get game info: ${response.statusText}`);
+      if (!response.ok) {
+        if (response.status === 0 || !response.status) {
+          throw new Error(
+            "Network connection failed. Please check your internet connection and try again."
+          );
+        }
+        if (response.status >= 500) {
+          throw new Error(
+            "Server is temporarily unavailable. Please try again in a moment."
+          );
+        }
+        if (response.status === 404) {
+          throw new Error(
+            "Game not found. It may have expired or been removed."
+          );
+        }
+        throw new Error(
+          `Failed to get game info: ${response.statusText || "Unknown error"}`
+        );
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw new Error(
+          "Unable to connect to game server. This may be due to network issues or server maintenance."
+        );
+      }
+      throw error;
     }
-
-    return response.json();
   }
 }

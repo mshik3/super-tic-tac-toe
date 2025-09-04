@@ -87,6 +87,7 @@ export class GameSession extends DurableObject<Env> {
 			} else if (this.players.size === 1) {
 				playerSymbol = 'O'; // Second player is O
 			} else {
+				// Game is full (should not happen with size check, but safety)
 				server.close(1008, 'Game is full');
 				return new Response(null, { status: 400 });
 			}
@@ -116,7 +117,7 @@ export class GameSession extends DurableObject<Env> {
 			this.sendGameStateToPlayer(playerId);
 
 			// If this is the second player, start the game
-			if (this.players.size === 2) {
+			if (this.players.size >= 2) {
 				this.gameState!.status = 'playing';
 				this.broadcastGameState();
 			}

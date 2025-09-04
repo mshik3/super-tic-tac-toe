@@ -27,23 +27,20 @@
 	},
 	"observability": {
 		"enabled": true
+	},
+	/**
+	 * Environment Variables
+	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
+	 */
+	"vars": {
+		"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173,https://super-tic-tac-toe.pages.dev,https://super-tic-tac-toe-*.pages.dev,https://super-tic-tac-toe.netlify.app,https://super-tic-tac-toe.vercel.app,https://super-tic-tac-toe-git-*.vercel.app",
+		"ENVIRONMENT": "production"
 	}
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
 	 */
 	// "placement": { "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 */
-	// "vars": { "MY_VARIABLE": "production_value" }
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
