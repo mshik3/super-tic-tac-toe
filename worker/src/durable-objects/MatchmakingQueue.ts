@@ -4,9 +4,13 @@ import type { QueueEntry, QueueStatusPayload, OpponentFoundPayload, ServerMessag
 export class MatchmakingQueue extends DurableObject<Env> {
 	private queue: QueueEntry[] = [];
 	private rateLimitMap: Map<string, { count: number; resetTime: number }> = new Map();
+	private cleanupAlarmId: string | null = null;
+	private lastActivity: number = Date.now();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+		// Schedule initial cleanup alarm
+		this.scheduleCleanupAlarm(300000); // 5 minutes
 	}
 
 	// Security: Rate limiting helper
@@ -57,6 +61,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	}
 
 	private async handleJoinQueue(request: Request): Promise<Response> {
+		this.updateActivity();
 		try {
 			const body = await request.text();
 
@@ -168,6 +173,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	}
 
 	private async handleLeaveQueue(request: Request): Promise<Response> {
+		this.updateActivity();
 		try {
 			const body = await request.text();
 
@@ -222,6 +228,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	}
 
 	private handleGetStatus(): Response {
+		this.updateActivity();
 		return new Response(
 			JSON.stringify({
 				playersInQueue: this.queue.length,
@@ -233,8 +240,8 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		);
 	}
 
-	// Store matched players temporarily
-	private matchedPlayers: Map<string, { gameId: string; symbol: 'X' | 'O' }> = new Map();
+	// Store matched players temporarily with timestamps
+	private matchedPlayers: Map<string, { gameId: string; symbol: 'X' | 'O'; matchedAt: number }> = new Map();
 
 	private async tryMatch(requestingPlayerId: string): Promise<{ gameId: string; yourSymbol: string } | null> {
 		if (this.queue.length < 2) {
@@ -252,9 +259,10 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		try {
 			await this.createGameSession(gameId, player1.playerId, player2.playerId);
 
-			// Store match info for both players
-			this.matchedPlayers.set(player1.playerId, { gameId, symbol: 'X' });
-			this.matchedPlayers.set(player2.playerId, { gameId, symbol: 'O' });
+			// Store match info for both players with timestamps
+			const matchedAt = Date.now();
+			this.matchedPlayers.set(player1.playerId, { gameId, symbol: 'X', matchedAt });
+			this.matchedPlayers.set(player2.playerId, { gameId, symbol: 'O', matchedAt });
 
 			// Return match info for the requesting player
 			const requestingPlayerSymbol = requestingPlayerId === player1.playerId ? 'X' : 'O';
@@ -302,13 +310,117 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		return Math.round(totalWaitTime / this.queue.length / 1000); // Convert to seconds
 	}
 
-	// Cleanup method to remove stale entries (called periodically)
+	// Enhanced cleanup method to remove stale entries
 	private cleanupStaleEntries() {
-		const now = Date.now();
-		const maxWaitTime = 5 * 60 * 1000; // 5 minutes
+		try {
+			const now = Date.now();
+			const maxWaitTime = 5 * 60 * 1000; // 5 minutes
+			const matchedPlayerTimeout = 10 * 60 * 1000; // 10 minutes for matched players
+			const rateLimitTimeout = 60 * 1000; // 1 minute for rate limits
 
-		this.queue = this.queue.filter((entry) => {
-			return now - entry.joinedAt < maxWaitTime;
-		});
+			// Clean stale queue entries
+			const initialQueueSize = this.queue.length;
+			this.queue = this.queue.filter((entry) => {
+				return now - entry.joinedAt < maxWaitTime;
+			});
+			const removedQueueEntries = initialQueueSize - this.queue.length;
+
+			// Clean stale matched players
+			const initialMatchedSize = this.matchedPlayers.size;
+			for (const [playerId, matchInfo] of this.matchedPlayers.entries()) {
+				if (now - matchInfo.matchedAt > matchedPlayerTimeout) {
+					this.matchedPlayers.delete(playerId);
+				}
+			}
+			const removedMatchedPlayers = initialMatchedSize - this.matchedPlayers.size;
+
+			// Clean stale rate limit entries
+			const initialRateLimitSize = this.rateLimitMap.size;
+			for (const [ip, limitInfo] of this.rateLimitMap.entries()) {
+				if (now > limitInfo.resetTime + rateLimitTimeout) {
+					this.rateLimitMap.delete(ip);
+				}
+			}
+			const removedRateLimits = initialRateLimitSize - this.rateLimitMap.size;
+
+			if (removedQueueEntries > 0 || removedMatchedPlayers > 0 || removedRateLimits > 0) {
+				console.log(
+					`MatchmakingQueue cleanup: removed ${removedQueueEntries} queue entries, ${removedMatchedPlayers} matched players, ${removedRateLimits} rate limits`
+				);
+			}
+
+			// Check if we should prepare for hibernation
+			if (this.shouldHibernate()) {
+				this.prepareForHibernation();
+			} else {
+				// Schedule next cleanup
+				this.scheduleCleanupAlarm(300000); // 5 minutes
+			}
+		} catch (error) {
+			console.error('Error during MatchmakingQueue cleanup:', error);
+		}
+	}
+
+	// Check if the queue should hibernate
+	private shouldHibernate(): boolean {
+		const now = Date.now();
+		const hibernationTimeout = 30 * 60 * 1000; // 30 minutes of inactivity
+
+		return this.queue.length === 0 && this.matchedPlayers.size === 0 && now - this.lastActivity > hibernationTimeout;
+	}
+
+	// Prepare for hibernation
+	private prepareForHibernation() {
+		try {
+			console.log('Preparing MatchmakingQueue for hibernation');
+
+			// Clear all data
+			this.queue = [];
+			this.rateLimitMap.clear();
+			this.matchedPlayers.clear();
+
+			// Cancel cleanup alarm
+			if (this.cleanupAlarmId) {
+				this.ctx.storage.deleteAlarm();
+				this.cleanupAlarmId = null;
+			}
+
+			console.log('MatchmakingQueue hibernated successfully');
+		} catch (error) {
+			console.error('Error preparing MatchmakingQueue for hibernation:', error);
+		}
+	}
+
+	// Schedule cleanup alarm
+	private scheduleCleanupAlarm(delayMs: number) {
+		try {
+			// Cancel existing alarm if any
+			if (this.cleanupAlarmId) {
+				this.ctx.storage.deleteAlarm();
+			}
+
+			const alarmTime = Date.now() + delayMs;
+			this.cleanupAlarmId = `cleanup-${Date.now()}`;
+			this.ctx.storage.setAlarm(alarmTime);
+			console.log(`MatchmakingQueue: Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
+		} catch (error) {
+			console.error('Error scheduling MatchmakingQueue cleanup alarm:', error);
+		}
+	}
+
+	// Update last activity timestamp
+	private updateActivity() {
+		this.lastActivity = Date.now();
+	}
+
+	// Durable Object alarm handler
+	alarm() {
+		try {
+			console.log('MatchmakingQueue cleanup alarm triggered');
+			this.cleanupAlarmId = null;
+			this.cleanupStaleEntries();
+		} catch (error) {
+			console.error('Error in MatchmakingQueue alarm handler:', error);
+		}
 	}
 }

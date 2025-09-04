@@ -18,6 +18,7 @@ export class GameSession extends DurableObject<Env> {
 	private players: Map<string, PlayerConnection> = new Map();
 	private gameId: string = '';
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
+	private cleanupAlarmId: string | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -102,6 +103,9 @@ export class GameSession extends DurableObject<Env> {
 			};
 
 			this.players.set(playerId, playerConnection);
+
+			// Cancel cleanup alarm since we have an active player
+			this.cancelCleanupAlarm();
 
 			// Set up WebSocket message handler
 			server.addEventListener('message', (event) => {
@@ -274,6 +278,9 @@ export class GameSession extends DurableObject<Env> {
 				type: 'GAME_OVER',
 				payload: gameOverPayload,
 			});
+
+			// Schedule cleanup since game is over
+			this.scheduleCleanupAlarm(30000); // 30 seconds after game ends
 		}
 	}
 
@@ -285,27 +292,110 @@ export class GameSession extends DurableObject<Env> {
 			// Notify other players about disconnection
 			this.broadcastGameState();
 
-			// Security: Set up cleanup timer for abandoned games
-			setTimeout(() => {
-				this.cleanupStaleConnections();
-			}, 300000); // 5 minutes
+			// Security: Set up cleanup alarm for abandoned games
+			this.scheduleCleanupAlarm(120000); // 2 minutes
 		}
 	}
 
 	// Security: Cleanup stale connections and games
 	private cleanupStaleConnections() {
-		const now = Date.now();
-		const staleTimeout = 300000; // 5 minutes
+		try {
+			const now = Date.now();
+			const staleTimeout = 120000; // 2 minutes (reduced from 5 minutes)
 
-		for (const [playerId, player] of this.players) {
-			if (!player.connected && now - player.lastPing > staleTimeout) {
-				this.players.delete(playerId);
+			for (const [playerId, player] of this.players) {
+				if (!player.connected && now - player.lastPing > staleTimeout) {
+					// Close websocket if still open
+					try {
+						player.websocket.close(1000, 'Cleanup: Stale connection');
+					} catch (error) {
+						console.warn(`Failed to close websocket for player ${playerId}:`, error);
+					}
+					this.players.delete(playerId);
+					console.log(`Removed stale player: ${playerId}`);
+				}
 			}
-		}
 
-		// If no players remain, the game session will be garbage collected
-		if (this.players.size === 0) {
+			// If no players remain, prepare for hibernation
+			if (this.players.size === 0) {
+				this.prepareForHibernation();
+			}
+		} catch (error) {
+			console.error('Error during cleanup:', error);
+		}
+	}
+
+	// Prepare the Durable Object for hibernation
+	private prepareForHibernation() {
+		try {
+			console.log(`Preparing GameSession ${this.gameId} for hibernation`);
+
+			// Clear all state
 			this.gameState = null;
+			this.gameId = '';
+			this.moveRateLimit.clear();
+			this.players.clear();
+
+			// Cancel any pending cleanup alarms
+			if (this.cleanupAlarmId) {
+				this.ctx.storage.deleteAlarm();
+				this.cleanupAlarmId = null;
+			}
+
+			console.log(`GameSession hibernated successfully`);
+		} catch (error) {
+			console.error('Error preparing for hibernation:', error);
+		}
+	}
+
+	// Schedule cleanup alarm
+	private scheduleCleanupAlarm(delayMs: number) {
+		try {
+			// Cancel existing alarm if any
+			if (this.cleanupAlarmId) {
+				this.ctx.storage.deleteAlarm();
+			}
+
+			const alarmTime = Date.now() + delayMs;
+			this.cleanupAlarmId = `cleanup-${Date.now()}`;
+			this.ctx.storage.setAlarm(alarmTime);
+			console.log(`Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
+		} catch (error) {
+			console.error('Error scheduling cleanup alarm:', error);
+		}
+	}
+
+	// Cancel cleanup alarm when players are active
+	private cancelCleanupAlarm() {
+		try {
+			if (this.cleanupAlarmId) {
+				this.ctx.storage.deleteAlarm();
+				this.cleanupAlarmId = null;
+				console.log('Cancelled cleanup alarm - players active');
+			}
+		} catch (error) {
+			console.error('Error cancelling cleanup alarm:', error);
+		}
+	}
+
+	// Durable Object alarm handler
+	alarm() {
+		try {
+			console.log(`Cleanup alarm triggered for GameSession ${this.gameId}`);
+			this.cleanupAlarmId = null;
+
+			// Check if we have any connected players
+			const hasConnectedPlayers = Array.from(this.players.values()).some((player) => player.connected);
+
+			if (!hasConnectedPlayers) {
+				console.log('No connected players found, initiating cleanup');
+				this.cleanupStaleConnections();
+			} else {
+				console.log('Connected players found, rescheduling cleanup alarm');
+				this.scheduleCleanupAlarm(120000); // Reschedule for 2 minutes
+			}
+		} catch (error) {
+			console.error('Error in alarm handler:', error);
 		}
 	}
 
