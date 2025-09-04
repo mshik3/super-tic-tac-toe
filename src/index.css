@@ -1,0 +1,55 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+    margin: 0;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .game-cell {
+    @apply w-12 h-12 border border-gray-300 flex items-center justify-center text-xl font-bold cursor-pointer transition-colors duration-150;
+  }
+
+  .game-cell:hover {
+    @apply bg-gray-100;
+  }
+
+  .game-cell.occupied {
+    @apply cursor-not-allowed;
+  }
+
+  .game-cell.x {
+    @apply text-blue-600;
+  }
+
+  .game-cell.o {
+    @apply text-red-600;
+  }
+
+  .sub-board {
+    @apply grid grid-cols-3 gap-1 p-2 border-2 border-gray-400 bg-white rounded-lg;
+  }
+
+  .sub-board.active {
+    @apply border-primary-500 bg-primary-50;
+  }
+
+  .sub-board.won {
+    @apply bg-gray-100 opacity-75;
+  }
+
+  .main-board {
+    @apply grid grid-cols-3 gap-4 p-6 bg-gray-100 rounded-xl shadow-lg;
+  }
+}

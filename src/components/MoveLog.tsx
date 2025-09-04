@@ -1,0 +1,116 @@
+import React, { useEffect, useRef } from "react";
+import { clsx } from "clsx";
+import type { GameMove } from "../utils/chessNotation";
+import type { PlayerSymbol } from "../types/game";
+
+interface MoveLogProps {
+  moves: GameMove[];
+  currentPlayer: PlayerSymbol;
+  isGameActive: boolean;
+}
+
+export const MoveLog: React.FC<MoveLogProps> = React.memo(
+  ({ moves, currentPlayer, isGameActive }) => {
+    const moveListRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom when new moves are added
+    useEffect(() => {
+      if (moveListRef.current) {
+        moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+      }
+    }, [moves]);
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div
+          className={clsx(
+            "p-4 border-b border-gray-200 transition-colors duration-300",
+            {
+              "bg-blue-50": isGameActive && currentPlayer === "X",
+              "bg-red-50": isGameActive && currentPlayer === "O",
+              "bg-gray-50": !isGameActive,
+            }
+          )}
+        >
+          <h3 className="text-lg font-semibold text-gray-900">Move Log</h3>
+          {isGameActive && (
+            <p
+              className={clsx("text-sm font-medium", {
+                "text-blue-700": currentPlayer === "X",
+                "text-red-700": currentPlayer === "O",
+              })}
+            >
+              {currentPlayer}'s Turn
+            </p>
+          )}
+          {!isGameActive && <p className="text-sm text-gray-500">Game Over</p>}
+        </div>
+
+        {/* Move list */}
+        <div ref={moveListRef} className="flex-1 overflow-y-auto p-2">
+          {moves.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              <p className="text-sm">No moves yet</p>
+              <p className="text-xs mt-1">
+                Game will start when X makes the first move
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {moves.map((move, index) => (
+                <div
+                  key={`${move.moveNumber}-${move.player}`}
+                  className={clsx(
+                    "flex items-center justify-between p-2 rounded text-sm",
+                    {
+                      "bg-blue-100 text-blue-900": move.player === "X",
+                      "bg-red-100 text-red-900": move.player === "O",
+                    }
+                  )}
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono font-bold text-xs bg-white px-1.5 py-0.5 rounded">
+                      {move.moveNumber}
+                    </span>
+                    <span
+                      className={clsx("font-bold text-lg", {
+                        "text-blue-700": move.player === "X",
+                        "text-red-700": move.player === "O",
+                      })}
+                    >
+                      {move.player}
+                    </span>
+                  </div>
+                  <span className="font-mono font-semibold text-base">
+                    {move.notation}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Notation guide */}
+        <div className="border-t border-gray-200 p-3">
+          <details className="text-xs text-gray-600">
+            <summary className="cursor-pointer font-medium hover:text-gray-800">
+              Notation Guide
+            </summary>
+            <div className="mt-2 space-y-1 text-xs">
+              <div>
+                <strong>Boards:</strong> UL, U, UR, L, M, R, LL, Lo, LR
+              </div>
+              <div>
+                <strong>Cells:</strong> ul, u, ur, l, m, r, ll, lo, lr
+              </div>
+              <div>
+                <strong>Example:</strong> "Rm" = Right board, middle cell
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    );
+  }
+);
