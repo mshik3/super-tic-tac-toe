@@ -33,7 +33,7 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
-		"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173,http://localhost:8080,https://super-tic-tac-toe.pages.dev,https://super-tic-tac-toe-*.pages.dev,https://41addb16.super-tic-tac-toe-frontend.pages.dev,https://*.super-tic-tac-toe-frontend.pages.dev,https://super-tic-tac-toe.netlify.app,https://super-tic-tac-toe.vercel.app,https://super-tic-tac-toe-git-*.vercel.app",
+		"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173,http://localhost:8080,https://super-tic-tac-toe.pages.dev,https://super-tic-tac-toe-*.pages.dev,https://super-tic-tac-toe-76l.pages.dev,https://*.super-tic-tac-toe-*.pages.dev,https://super-tic-tac-toe.netlify.app,https://super-tic-tac-toe.vercel.app,https://super-tic-tac-toe-git-*.vercel.app",
 		"ENVIRONMENT": "production"
 	}
 	/**

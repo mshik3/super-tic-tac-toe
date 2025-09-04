@@ -27,7 +27,7 @@ This guide will get you from "code on your machine" to "live on the internet" in
 3. **Configure Build Settings**
 
    ```
-   Project name: super-tic-tac-toe-frontend (or whatever you like)
+   Project name: super-tic-tac-toe (or whatever you like)
    Production branch: main
    Build command: npm run build
    Build output directory: dist
