@@ -7,10 +7,11 @@ interface MoveLogProps {
   moves: GameMove[];
   currentPlayer: PlayerSymbol;
   isGameActive: boolean;
+  variant?: "default" | "compact";
 }
 
 export const MoveLog: React.FC<MoveLogProps> = React.memo(
-  ({ moves, currentPlayer, isGameActive }) => {
+  ({ moves, currentPlayer, isGameActive, variant = "default" }) => {
     const moveListRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom when new moves are added
@@ -20,12 +21,14 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
       }
     }, [moves]);
 
+    const isCompact = variant === "compact";
+
     return (
-      <div className="flex flex-col h-full">
+      <div className={clsx("flex flex-col h-full", isCompact && "text-xs")}>
         {/* Header */}
         <div
           className={clsx(
-            "p-4 border-b border-gray-200 transition-colors duration-300",
+            "border-b border-gray-200 transition-colors duration-300",
             {
               "bg-blue-50": isGameActive && currentPlayer === "X",
               "bg-red-50": isGameActive && currentPlayer === "O",
@@ -33,25 +36,62 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
             }
           )}
         >
-          <h3 className="text-lg font-semibold text-gray-900">Move Log</h3>
-          {isGameActive && (
-            <p
-              className={clsx("text-sm font-medium", {
-                "text-blue-700": currentPlayer === "X",
-                "text-red-700": currentPlayer === "O",
-              })}
+          <div
+            className={clsx(
+              "flex items-center justify-between",
+              isCompact ? "p-2" : "p-4"
+            )}
+          >
+            <h3
+              className={clsx(
+                "font-semibold text-gray-900",
+                isCompact ? "text-base" : "text-lg"
+              )}
             >
-              {currentPlayer}'s Turn
-            </p>
-          )}
-          {!isGameActive && <p className="text-sm text-gray-500">Game Over</p>}
+              Move Log
+            </h3>
+            {isGameActive && (
+              <p
+                className={clsx(
+                  isCompact ? "text-xs" : "text-sm",
+                  "font-medium",
+                  {
+                    "text-blue-700": currentPlayer === "X",
+                    "text-red-700": currentPlayer === "O",
+                  }
+                )}
+              >
+                {currentPlayer}'s Turn
+              </p>
+            )}
+            {!isGameActive && (
+              <p
+                className={clsx(
+                  isCompact ? "text-xs" : "text-sm",
+                  "text-gray-500"
+                )}
+              >
+                Game Over
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Move list */}
-        <div ref={moveListRef} className="flex-1 overflow-y-auto p-2">
+        <div
+          ref={moveListRef}
+          className={clsx("flex-1 overflow-y-auto", isCompact ? "p-2" : "p-3")}
+        >
           {moves.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              <p className="text-sm">No moves yet</p>
+            <div
+              className={clsx(
+                "text-center text-gray-500",
+                isCompact ? "py-6" : "py-8"
+              )}
+            >
+              <p className={clsx(isCompact ? "text-xs" : "text-sm")}>
+                No moves yet
+              </p>
               <p className="text-xs mt-1">
                 Game will start when X makes the first move
               </p>
@@ -61,28 +101,39 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
               {moves.map((move) => (
                 <div
                   key={`${move.moveNumber}-${move.player}`}
-                  className={clsx(
-                    "flex items-center justify-between p-2 rounded text-sm",
-                    {
-                      "bg-blue-100 text-blue-900": move.player === "X",
-                      "bg-red-100 text-red-900": move.player === "O",
-                    }
-                  )}
+                  className={clsx("flex items-center justify-between rounded", {
+                    "bg-blue-100 text-blue-900": move.player === "X",
+                    "bg-red-100 text-red-900": move.player === "O",
+                  })}
                 >
-                  <div className="flex items-center space-x-2">
+                  <div
+                    className={clsx(
+                      "flex items-center space-x-2",
+                      isCompact ? "p-1" : "p-2"
+                    )}
+                  >
                     <span className="font-mono font-bold text-xs bg-white px-1.5 py-0.5 rounded">
                       {move.moveNumber}
                     </span>
                     <span
-                      className={clsx("font-bold text-lg", {
-                        "text-blue-700": move.player === "X",
-                        "text-red-700": move.player === "O",
-                      })}
+                      className={clsx(
+                        "font-bold",
+                        isCompact ? "text-base" : "text-lg",
+                        {
+                          "text-blue-700": move.player === "X",
+                          "text-red-700": move.player === "O",
+                        }
+                      )}
                     >
                       {move.player}
                     </span>
                   </div>
-                  <span className="font-mono font-semibold text-base">
+                  <span
+                    className={clsx(
+                      "font-mono font-semibold",
+                      isCompact ? "text-sm pr-2" : "text-base pr-3"
+                    )}
+                  >
                     {move.notation}
                   </span>
                 </div>
@@ -92,7 +143,12 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
         </div>
 
         {/* Notation guide */}
-        <div className="border-t border-gray-200 p-3">
+        <div
+          className={clsx(
+            "border-t border-gray-200",
+            isCompact ? "p-2" : "p-3"
+          )}
+        >
           <details className="text-xs text-gray-600">
             <summary className="cursor-pointer font-medium hover:text-gray-800">
               Notation Guide

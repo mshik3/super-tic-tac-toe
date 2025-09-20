@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { GameBoard } from "./GameBoard";
 import { Instructions } from "./Instructions";
 import { MoveLog } from "./MoveLog";
@@ -20,6 +20,7 @@ import {
 } from "../store/gameStore";
 
 export const GameScreen: React.FC = () => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const gameState = useGameState();
   const error = useGameError();
   const moves = useGameMoves();
@@ -83,10 +84,37 @@ export const GameScreen: React.FC = () => {
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900 text-center">
-          Super Tic-Tac-Toe {gameMode === "online" && "- Online"}
-        </h1>
+      <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-2 md:py-4">
+        {/* Mobile header row */}
+        <div className="flex items-center justify-between md:hidden">
+          <div className="flex items-center">
+            <button
+              aria-label="Open menu"
+              onClick={() => setIsMenuOpen(true)}
+              className="p-2 -ml-2 text-gray-700 hover:text-gray-900"
+            >
+              ☰
+            </button>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900">
+            Super Tic-Tac-Toe {gameMode === "online" && "- Online"}
+          </h1>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleNewGame}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+            >
+              {gameMode === "online" ? "New Match" : "New Game"}
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop header title */}
+        <div className="hidden md:block">
+          <h1 className="text-2xl font-bold text-gray-900 text-center">
+            Super Tic-Tac-Toe {gameMode === "online" && "- Online"}
+          </h1>
+        </div>
 
         {/* Error display */}
         {error && (
@@ -94,31 +122,66 @@ export const GameScreen: React.FC = () => {
             <p className="text-red-800 text-sm font-medium">{error}</p>
           </div>
         )}
+
+        {/* Mobile inline status */}
+        {gameMode === "online" && (
+          <div className="md:hidden mt-2 flex items-center justify-between text-sm text-gray-700">
+            <div className="flex items-center space-x-2">
+              <span>
+                {connectionStatus === "connected"
+                  ? "🟢 Connected"
+                  : connectionStatus === "connecting"
+                  ? "🟡 Connecting..."
+                  : connectionStatus === "error"
+                  ? "🔴 Error"
+                  : "⚪ Disconnected"}
+              </span>
+              {playerSymbol && (
+                <span className="flex items-center space-x-1">
+                  <span>You:</span>
+                  <span className="font-bold">{playerSymbol}</span>
+                </span>
+              )}
+            </div>
+            <div className="flex items-center space-x-1">
+              <span>Opponent:</span>
+              <span
+                className={
+                  opponentConnected ? "text-green-600" : "text-red-600"
+                }
+              >
+                {opponentConnected ? "🟢 Online" : "🔴 Offline"}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Connection Status for Online Games */}
+      {/* Connection Status for Online Games (desktop) */}
       {gameMode === "online" && (
-        <ConnectionStatus
-          status={connectionStatus}
-          opponentConnected={opponentConnected}
-          playerSymbol={playerSymbol}
-        />
+        <div className="hidden md:block">
+          <ConnectionStatus
+            status={connectionStatus}
+            opponentConnected={opponentConnected}
+            playerSymbol={playerSymbol}
+          />
+        </div>
       )}
 
       {/* Main game area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - Instructions */}
-        <div className="w-80 bg-white border-r border-gray-200">
+        {/* Left sidebar - Instructions (desktop only) */}
+        <div className="hidden md:block w-80 bg-white border-r border-gray-200">
           <Instructions onNewGame={handleNewGame} />
         </div>
 
         {/* Center - Game board */}
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="flex flex-col items-center space-y-6">
+        <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-y-auto">
+          <div className="flex flex-col items-center space-y-4 md:space-y-6 w-full">
             <GameBoard gameState={gameState} onMove={makeMove} />
 
-            {/* Game controls */}
-            <div className="flex space-x-4">
+            {/* Game controls (desktop only) */}
+            <div className="hidden md:flex space-x-4">
               <button
                 onClick={handleNewGame}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -153,11 +216,21 @@ export const GameScreen: React.FC = () => {
                 </button>
               )}
             </div>
+
+            {/* Move log under board (mobile only) */}
+            <div className="w-full md:hidden bg-white rounded-lg shadow border border-gray-200">
+              <MoveLog
+                moves={moves}
+                currentPlayer={gameState.currentPlayer}
+                isGameActive={gameState.status === "playing"}
+                variant="compact"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Right sidebar - Move log */}
-        <div className="w-80 bg-white border-l border-gray-200">
+        {/* Right sidebar - Move log (desktop only) */}
+        <div className="hidden md:block w-80 bg-white border-l border-gray-200">
           <MoveLog
             moves={moves}
             currentPlayer={gameState.currentPlayer}
@@ -165,6 +238,23 @@ export const GameScreen: React.FC = () => {
           />
         </div>
       </div>
+
+      {/* Mobile slide-over for Instructions */}
+      {isMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsMenuOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-80 max-w-[85vw] bg-white shadow-xl transform transition-transform duration-200 ease-out">
+            <Instructions
+              onNewGame={handleNewGame}
+              showHeaderClose
+              onClose={() => setIsMenuOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

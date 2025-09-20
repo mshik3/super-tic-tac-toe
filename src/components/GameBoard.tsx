@@ -36,7 +36,7 @@ export const GameBoard: React.FC<GameBoardProps> = React.memo(
     };
 
     return (
-      <div className="flex flex-col items-center space-y-4">
+      <div className="flex flex-col items-center space-y-4 w-full">
         {/* Game status - only show winner */}
         {gameState.status === "finished" && (
           <div className="text-center">
@@ -58,7 +58,7 @@ export const GameBoard: React.FC<GameBoardProps> = React.memo(
 
         {/* Main game board */}
         <div
-          className="main-board"
+          className="main-board w-full max-w-[min(92vw,92vh)] md:max-w-none"
           role="grid"
           aria-label="Super Tic-Tac-Toe game board"
         >

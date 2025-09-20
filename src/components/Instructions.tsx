@@ -2,14 +2,25 @@ import React from "react";
 
 interface InstructionsProps {
   onNewGame?: () => void;
+  showHeaderClose?: boolean;
+  onClose?: () => void;
 }
 
 export const Instructions: React.FC<InstructionsProps> = React.memo(
-  ({ onNewGame }) => {
+  ({ onNewGame, showHeaderClose, onClose }) => {
     return (
       <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">How to Play</h3>
+          {showHeaderClose && (
+            <button
+              aria-label="Close"
+              onClick={onClose}
+              className="ml-2 text-gray-600 hover:text-gray-800"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-gray-700">
