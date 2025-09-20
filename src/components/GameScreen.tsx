@@ -224,6 +224,8 @@ export const GameScreen: React.FC = () => {
                 currentPlayer={gameState.currentPlayer}
                 isGameActive={gameState.status === "playing"}
                 variant="compact"
+                order="desc"
+                maxHeightClass="max-h-64"
               />
             </div>
           </div>
@@ -235,6 +237,7 @@ export const GameScreen: React.FC = () => {
             moves={moves}
             currentPlayer={gameState.currentPlayer}
             isGameActive={gameState.status === "playing"}
+            order="asc"
           />
         </div>
       </div>

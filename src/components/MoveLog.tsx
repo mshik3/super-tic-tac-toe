@@ -8,18 +8,31 @@ interface MoveLogProps {
   currentPlayer: PlayerSymbol;
   isGameActive: boolean;
   variant?: "default" | "compact";
+  order?: "asc" | "desc"; // ascending = oldest first, descending = newest first
+  maxHeightClass?: string; // optional Tailwind class for max-height of scroll area
 }
 
 export const MoveLog: React.FC<MoveLogProps> = React.memo(
-  ({ moves, currentPlayer, isGameActive, variant = "default" }) => {
+  ({
+    moves,
+    currentPlayer,
+    isGameActive,
+    variant = "default",
+    order = "asc",
+    maxHeightClass,
+  }) => {
     const moveListRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom when new moves are added
     useEffect(() => {
       if (moveListRef.current) {
-        moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+        if (order === "asc") {
+          moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+        } else {
+          moveListRef.current.scrollTop = 0;
+        }
       }
-    }, [moves]);
+    }, [moves, order]);
 
     const isCompact = variant === "compact";
 
@@ -80,7 +93,11 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
         {/* Move list */}
         <div
           ref={moveListRef}
-          className={clsx("flex-1 overflow-y-auto", isCompact ? "p-2" : "p-3")}
+          className={clsx(
+            "overflow-y-auto",
+            isCompact ? "p-2" : "p-3",
+            maxHeightClass ?? ""
+          )}
         >
           {moves.length === 0 ? (
             <div
@@ -98,7 +115,7 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
             </div>
           ) : (
             <div className="space-y-1">
-              {moves.map((move) => (
+              {(order === "desc" ? [...moves].reverse() : moves).map((move) => (
                 <div
                   key={`${move.moveNumber}-${move.player}`}
                   className={clsx("flex items-center justify-between rounded", {
