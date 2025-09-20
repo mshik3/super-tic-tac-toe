@@ -10,6 +10,8 @@ interface MoveLogProps {
   variant?: "default" | "compact";
   order?: "asc" | "desc"; // ascending = oldest first, descending = newest first
   maxHeightClass?: string; // optional Tailwind class for max-height of scroll area
+  heightClass?: string; // optional fixed height class for scroll area
+  autoScroll?: boolean; // whether to auto-scroll when new moves arrive
 }
 
 export const MoveLog: React.FC<MoveLogProps> = React.memo(
@@ -20,19 +22,20 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
     variant = "default",
     order = "asc",
     maxHeightClass,
+    heightClass,
+    autoScroll = false,
   }) => {
     const moveListRef = useRef<HTMLDivElement>(null);
 
-    // Auto-scroll to bottom when new moves are added
+    // Optional auto-scroll when new moves are added
     useEffect(() => {
-      if (moveListRef.current) {
-        if (order === "asc") {
-          moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
-        } else {
-          moveListRef.current.scrollTop = 0;
-        }
+      if (!autoScroll || !moveListRef.current) return;
+      if (order === "asc") {
+        moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+      } else {
+        moveListRef.current.scrollTop = 0;
       }
-    }, [moves, order]);
+    }, [moves, order, autoScroll]);
 
     const isCompact = variant === "compact";
 
@@ -96,7 +99,7 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
           className={clsx(
             "overflow-y-auto",
             isCompact ? "p-2" : "p-3",
-            maxHeightClass ?? ""
+            heightClass ?? maxHeightClass ?? ""
           )}
         >
           {moves.length === 0 ? (

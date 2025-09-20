@@ -225,7 +225,8 @@ export const GameScreen: React.FC = () => {
                 isGameActive={gameState.status === "playing"}
                 variant="compact"
                 order="desc"
-                maxHeightClass="max-h-64"
+                heightClass="h-64"
+                autoScroll={false}
               />
             </div>
           </div>
