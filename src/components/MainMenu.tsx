@@ -63,7 +63,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               setTouched(true);
               const result = validateNickname(nickname);
               if (!result.isValid) return;
-              onPlayOnline(result.sanitized);
+              // Prefer the memoized sanitized value; both should match.
+              onPlayOnline(sanitized);
             }}
             disabled={!isValid}
             className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg"

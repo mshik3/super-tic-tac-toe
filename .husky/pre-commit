@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+
+# Fast autofix for staged files
+npx lint-staged || exit 1
+
+# Full project quality gates
+npm run lint || exit 1
+npm run typecheck || exit 1
+npm run typecheck:worker || exit 1
+npm run test || exit 1
+
+# Optional Python tests if available
+if command -v pytest >/dev/null 2>&1; then
+  if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -d tests ]; then
+    echo "Running pytest..."
+    pytest -q || exit 1
+  else
+    echo "Skipping pytest: no config or tests directory found."
+  fi
+else
+  echo "Skipping pytest: 'pytest' not found on PATH."
+fi
+
+echo "Pre-commit checks passed."
+

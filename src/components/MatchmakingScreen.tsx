@@ -187,6 +187,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
     };
   }, [
     playerId,
+    playerNickname,
     onGameFound,
     apiClient,
     backoffDelay,

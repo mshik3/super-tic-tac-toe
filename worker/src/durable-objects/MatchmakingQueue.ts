@@ -335,8 +335,8 @@ export class MatchmakingQueue extends DurableObject<Env> {
 
 	private async createGameSession(
 		gameId: string,
-		player1: { playerId: string; symbol: 'X' | 'O'; token: string },
-		player2: { playerId: string; symbol: 'X' | 'O'; token: string }
+		player1: { playerId: string; symbol: 'X' | 'O'; token: string; nickname?: string },
+		player2: { playerId: string; symbol: 'X' | 'O'; token: string; nickname?: string }
 	) {
 		// Get a reference to the GameSession Durable Object
 		const gameSessionId = this.env.GAME_SESSION.idFromName(gameId);
@@ -353,8 +353,8 @@ export class MatchmakingQueue extends DurableObject<Env> {
 					body: JSON.stringify({
 						gameId,
 						players: [
-							{ id: player1.playerId, symbol: player1.symbol, token: player1.token },
-							{ id: player2.playerId, symbol: player2.symbol, token: player2.token },
+							{ id: player1.playerId, symbol: player1.symbol, token: player1.token, nickname: player1.nickname },
+							{ id: player2.playerId, symbol: player2.symbol, token: player2.token, nickname: player2.nickname },
 						],
 					}),
 				})
