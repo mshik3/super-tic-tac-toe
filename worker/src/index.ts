@@ -15,40 +15,60 @@ export default {
 		const url = new URL(request.url);
 
 		// Security: Environment-specific CORS origins from environment variables
-		const allowedOriginsStr = env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:4173,https://super-tic-tac-toe.pages.dev';
-		const allowedOrigins = allowedOriginsStr.split(',').map((origin: string) => origin.trim());
+		const allowedOriginsStr = env.ALLOWED_ORIGINS || 'https://super-tic-tac-toe.pages.dev';
+		const allowedOrigins = allowedOriginsStr.split(',').map((o: string) => o.trim());
 
 		const origin = request.headers.get('Origin');
-		console.log('CORS: Request origin:', origin);
+		const isDev = env.ENVIRONMENT !== 'production';
 
-		// Enhanced origin matching with wildcard support
-		const isAllowedOrigin =
-			origin &&
-			allowedOrigins.some((allowed: string) => {
-				if (allowed.includes('*')) {
-					// Convert wildcard pattern to regex
-					const pattern = allowed.replace(/\*/g, '[a-zA-Z0-9-]+');
-					const regex = new RegExp(`^${pattern}$`);
-					return regex.test(origin);
+		// Safer origin check: exact match or subdomain match when pattern like https://*.pages.dev
+		const originAllowed = (incoming: string | null): string | null => {
+			if (!incoming) return null;
+			try {
+				const incomingUrl = new URL(incoming);
+				for (const allowed of allowedOrigins) {
+					if (!allowed) continue;
+					if (allowed.includes('*')) {
+						const allowedUrl = new URL(allowed.replace('*.', 'subdomain.'));
+						if (
+							incomingUrl.protocol === allowedUrl.protocol &&
+							incomingUrl.hostname.endsWith(allowedUrl.hostname.replace('subdomain.', ''))
+						) {
+							return incoming;
+						}
+					} else if (incoming === allowed) {
+						return incoming;
+					}
 				}
-				return allowed === origin;
-			});
-
-		console.log('CORS: Origin allowed:', isAllowedOrigin);
-
-		const corsHeaders = {
-			'Access-Control-Allow-Origin': isAllowedOrigin
-				? origin
-				: origin?.includes('localhost')
-				? origin
-				: 'https://super-tic-tac-toe.pages.dev',
-			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type',
-			'Access-Control-Max-Age': '86400', // 24 hours cache for preflight
+				// Allow localhost in non-production environments
+				if (isDev && incomingUrl.hostname === 'localhost') return incoming;
+			} catch {}
+			return null;
 		};
+
+		const allowedOrigin = originAllowed(origin);
+
+		const baseHeaders: Record<string, string> = {
+			'X-Content-Type-Options': 'nosniff',
+			'Referrer-Policy': 'no-referrer',
+			'Cross-Origin-Opener-Policy': 'same-origin',
+			'Cross-Origin-Resource-Policy': 'cross-origin',
+			Vary: 'Origin',
+		};
+
+		const corsHeaders = allowedOrigin
+			? {
+					...baseHeaders,
+					'Access-Control-Allow-Origin': allowedOrigin,
+					'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type',
+					'Access-Control-Max-Age': '86400',
+			  }
+			: baseHeaders;
 
 		// Handle preflight requests
 		if (request.method === 'OPTIONS') {
+			if (!allowedOrigin) return new Response(null, { status: 403, headers: baseHeaders });
 			return new Response(null, { headers: corsHeaders });
 		}
 
@@ -64,7 +84,7 @@ export default {
 			const newRequest = new Request(newUrl, request);
 			const response = await queueStub.fetch(newRequest);
 
-			// Add CORS headers to response
+			// Add security and CORS headers to response
 			const newResponse = new Response(response.body, response);
 			Object.entries(corsHeaders).forEach(([key, value]) => {
 				newResponse.headers.set(key, value);
@@ -90,7 +110,7 @@ export default {
 			// Forward the request to the game session
 			const response = await sessionStub.fetch(request);
 
-			// Add CORS headers if not a WebSocket upgrade
+			// Add headers if not a WebSocket upgrade
 			if (!response.headers.get('Upgrade')) {
 				const newResponse = new Response(response.body, response);
 				Object.entries(corsHeaders).forEach(([key, value]) => {

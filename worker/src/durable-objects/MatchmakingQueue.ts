@@ -102,6 +102,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 						matched: true,
 						gameId: matchInfo.gameId,
 						yourSymbol: matchInfo.symbol,
+						connectToken: matchInfo.token,
 					}),
 					{
 						headers: { 'Content-Type': 'application/json' },
@@ -144,6 +145,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 						matched: true,
 						gameId: matchResult.gameId,
 						yourSymbol: matchResult.yourSymbol,
+						connectToken: matchResult.connectToken,
 					}),
 					{
 						headers: { 'Content-Type': 'application/json' },
@@ -241,9 +243,9 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	}
 
 	// Store matched players temporarily with timestamps
-	private matchedPlayers: Map<string, { gameId: string; symbol: 'X' | 'O'; matchedAt: number }> = new Map();
+	private matchedPlayers: Map<string, { gameId: string; symbol: 'X' | 'O'; token: string; matchedAt: number }> = new Map();
 
-	private async tryMatch(requestingPlayerId: string): Promise<{ gameId: string; yourSymbol: string } | null> {
+	private async tryMatch(requestingPlayerId: string): Promise<{ gameId: string; yourSymbol: string; connectToken: string } | null> {
 		if (this.queue.length < 2) {
 			return null;
 		}
@@ -255,20 +257,38 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		// Generate cryptographically secure unique game ID
 		const gameId = `game-${crypto.randomUUID()}`;
 
+		// Generate per-player one-time connect tokens
+		const tokenPlayer1 = crypto.randomUUID();
+		const tokenPlayer2 = crypto.randomUUID();
+
 		// Create game session
 		try {
-			await this.createGameSession(gameId, player1.playerId, player2.playerId);
+			await this.createGameSession(
+				gameId,
+				{
+					playerId: player1.playerId,
+					symbol: 'X',
+					token: tokenPlayer1,
+				},
+				{
+					playerId: player2.playerId,
+					symbol: 'O',
+					token: tokenPlayer2,
+				}
+			);
 
 			// Store match info for both players with timestamps
 			const matchedAt = Date.now();
-			this.matchedPlayers.set(player1.playerId, { gameId, symbol: 'X', matchedAt });
-			this.matchedPlayers.set(player2.playerId, { gameId, symbol: 'O', matchedAt });
+			this.matchedPlayers.set(player1.playerId, { gameId, symbol: 'X', token: tokenPlayer1, matchedAt });
+			this.matchedPlayers.set(player2.playerId, { gameId, symbol: 'O', token: tokenPlayer2, matchedAt });
 
 			// Return match info for the requesting player
 			const requestingPlayerSymbol = requestingPlayerId === player1.playerId ? 'X' : 'O';
+			const connectToken = requestingPlayerId === player1.playerId ? tokenPlayer1 : tokenPlayer2;
 			return {
 				gameId,
 				yourSymbol: requestingPlayerSymbol,
+				connectToken,
 			};
 		} catch (error) {
 			// If game creation fails, put players back in queue
@@ -277,7 +297,11 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		}
 	}
 
-	private async createGameSession(gameId: string, player1Id: string, player2Id: string) {
+	private async createGameSession(
+		gameId: string,
+		player1: { playerId: string; symbol: 'X' | 'O'; token: string },
+		player2: { playerId: string; symbol: 'X' | 'O'; token: string }
+	) {
 		// Get a reference to the GameSession Durable Object
 		const gameSessionId = this.env.GAME_SESSION.idFromName(gameId);
 		const gameSessionStub = this.env.GAME_SESSION.get(gameSessionId);
@@ -285,8 +309,21 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		// Initialize the game session by making a request to it
 		// This ensures the Durable Object is created and ready for WebSocket connections
 		try {
-			await gameSessionStub.fetch(new Request(`http://localhost/game-info?gameId=${gameId}`));
-			console.log(`Created game session ${gameId} for players ${player1Id} and ${player2Id}`);
+			// Initialize the game with allowed players and tokens
+			await gameSessionStub.fetch(
+				new Request(`http://localhost/init`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						gameId,
+						players: [
+							{ id: player1.playerId, symbol: player1.symbol, token: player1.token },
+							{ id: player2.playerId, symbol: player2.symbol, token: player2.token },
+						],
+					}),
+				})
+			);
+			console.log(`Created game session ${gameId} for players ${player1.playerId} and ${player2.playerId}`);
 		} catch (error) {
 			console.error(`Failed to create game session ${gameId}:`, error);
 			throw error;
@@ -402,7 +439,8 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			const alarmTime = Date.now() + delayMs;
 			this.cleanupAlarmId = `cleanup-${Date.now()}`;
 			this.ctx.storage.setAlarm(alarmTime);
-			console.log(`MatchmakingQueue: Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
+			if (this.env.ENVIRONMENT !== 'production')
+				console.log(`MatchmakingQueue: Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
 		} catch (error) {
 			console.error('Error scheduling MatchmakingQueue cleanup alarm:', error);
 		}
@@ -416,7 +454,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	// Durable Object alarm handler
 	alarm() {
 		try {
-			console.log('MatchmakingQueue cleanup alarm triggered');
+			if (this.env.ENVIRONMENT !== 'production') console.log('MatchmakingQueue cleanup alarm triggered');
 			this.cleanupAlarmId = null;
 			this.cleanupStaleEntries();
 		} catch (error) {

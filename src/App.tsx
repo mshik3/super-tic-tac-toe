@@ -28,8 +28,12 @@ function App() {
     findOnlineGame();
   };
 
-  const handleGameFound = (gameId: string, playerSymbol: "X" | "O") => {
-    connectToGame(gameId, playerSymbol);
+  const handleGameFound = (
+    gameId: string,
+    playerSymbol: "X" | "O",
+    connectToken: string
+  ) => {
+    connectToGame(gameId, playerSymbol, connectToken);
   };
 
   const handleCancelSearch = () => {

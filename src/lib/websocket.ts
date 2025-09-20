@@ -154,10 +154,18 @@ export class GameWebSocket {
 export class GameAPIClient {
   private baseUrl: string;
 
-  constructor(
-    baseUrl: string = "https://super-tic-tac-toe-worker.mshik3.workers.dev"
-  ) {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string) {
+    // Prefer Vite define, fallback to env, then hardcoded (legacy)
+    const definedUrl =
+      typeof __WORKER_URL__ !== "undefined" ? __WORKER_URL__ : undefined;
+    const envUrl = (import.meta as any).env?.VITE_WORKER_URL as
+      | string
+      | undefined;
+    this.baseUrl =
+      baseUrl ||
+      definedUrl ||
+      envUrl ||
+      "https://super-tic-tac-toe-worker.mshik3.workers.dev";
   }
 
   async joinQueue(playerId: string): Promise<any> {
@@ -279,11 +287,13 @@ export class GameAPIClient {
     }
   }
 
-  getWebSocketUrl(gameId: string, playerId: string): string {
+  getWebSocketUrl(gameId: string, playerId: string, token?: string): string {
     const wsUrl = this.baseUrl
       .replace("http://", "ws://")
       .replace("https://", "wss://");
-    return `${wsUrl}/game?gameId=${gameId}&playerId=${playerId}`;
+    const search = new URLSearchParams({ gameId, playerId });
+    if (token) search.set("token", token);
+    return `${wsUrl}/game?${search.toString()}`;
   }
 
   async getGameInfo(gameId: string): Promise<any> {

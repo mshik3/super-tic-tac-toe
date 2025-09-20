@@ -23,6 +23,7 @@ export class GameSession extends DurableObject<Env> {
 	private cleanupAlarmId: string | null = null;
 	private moves: StoredMove[] = [];
 	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
+	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string }> = new Map(); // admitted players and tokens
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -83,6 +84,37 @@ export class GameSession extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 
+		// Initialization from MatchmakingQueue with allowed players/tokens
+		if (request.method === 'POST' && url.pathname === '/init') {
+			try {
+				const bodyText = await request.text();
+				if (bodyText.length > 2048) {
+					return new Response('Payload too large', { status: 413 });
+				}
+				const body = JSON.parse(bodyText) as {
+					gameId: string;
+					players: Array<{ id: string; symbol: PlayerSymbol; token: string }>;
+				};
+				if (!body || typeof body !== 'object' || !body.gameId || !Array.isArray(body.players) || body.players.length !== 2) {
+					return new Response('Invalid init payload', { status: 400 });
+				}
+
+				await this.initializeGameSession(body.gameId);
+				this.allowedPlayers.clear();
+				for (const p of body.players) {
+					if (!/^[a-zA-Z0-9\-_]+$/.test(p.id) || (p.symbol !== 'X' && p.symbol !== 'O') || typeof p.token !== 'string') {
+						return new Response('Invalid player data', { status: 400 });
+					}
+					this.allowedPlayers.set(p.id, { symbol: p.symbol, token: p.token });
+				}
+				// Persist allowed players and game id
+				await this.ctx.storage.put('allowedPlayers', Array.from(this.allowedPlayers.entries()));
+				await this.ctx.storage.put('gameId', body.gameId);
+				return new Response('ok');
+			} catch {}
+			return new Response('Invalid request', { status: 400 });
+		}
+
 		// Handle WebSocket upgrade
 		if (request.headers.get('Upgrade') === 'websocket') {
 			const webSocketPair = new WebSocketPair();
@@ -94,9 +126,10 @@ export class GameSession extends DurableObject<Env> {
 			// Extract player info from query params
 			const playerId = url.searchParams.get('playerId');
 			const gameId = url.searchParams.get('gameId');
+			const token = url.searchParams.get('token');
 
 			// Security: Validate required parameters
-			if (!playerId || !gameId) {
+			if (!playerId || !gameId || !token) {
 				server.close(1008, 'Invalid connection parameters');
 				return new Response(null, { status: 400 });
 			}
@@ -113,14 +146,27 @@ export class GameSession extends DurableObject<Env> {
 				return new Response(null, { status: 400 });
 			}
 
-			// Initialize game if not exists
+			// Initialize game if not exists; also load allowed players if needed
 			if (!this.gameState) {
 				await this.initializeGameSession(gameId);
+			}
+			if (this.allowedPlayers.size === 0) {
+				const stored = await this.ctx.storage.get<[string, { symbol: PlayerSymbol; token: string }][]>('allowedPlayers');
+				if (stored) {
+					this.allowedPlayers = new Map(stored);
+				}
+			}
+
+			// Enforce admission control using token
+			const allowed = this.allowedPlayers.get(playerId);
+			if (!allowed || allowed.token !== token) {
+				server.close(1008, 'Unauthorized');
+				return new Response(null, { status: 401 });
 			}
 
 			// Check if this player is reconnecting to an existing game
 			const existingPlayer = this.players.get(playerId);
-			let playerSymbol: PlayerSymbol;
+			let playerSymbol: PlayerSymbol = allowed.symbol;
 
 			if (existingPlayer) {
 				// Player is reconnecting - preserve their symbol and update connection
@@ -128,18 +174,9 @@ export class GameSession extends DurableObject<Env> {
 				existingPlayer.websocket = server;
 				existingPlayer.connected = true;
 				existingPlayer.lastPing = Date.now();
-				console.log(`Player ${playerId} reconnected with symbol ${playerSymbol}`);
+				if (this.env.ENVIRONMENT !== 'production') console.log(`Player ${playerId} reconnected with symbol ${playerSymbol}`);
 			} else {
-				// New player joining - determine symbol based on connection order
-				if (this.players.size === 0) {
-					playerSymbol = 'X'; // First player is X
-				} else if (this.players.size === 1) {
-					playerSymbol = 'O'; // Second player is O
-				} else {
-					// Game is full (should not happen with size check, but safety)
-					server.close(1008, 'Game is full');
-					return new Response(null, { status: 400 });
-				}
+				// New player joining - symbol comes from allowed list
 
 				// Add new player connection
 				const playerConnection: PlayerConnection = {
@@ -151,7 +188,7 @@ export class GameSession extends DurableObject<Env> {
 				};
 
 				this.players.set(playerId, playerConnection);
-				console.log(`New player ${playerId} joined with symbol ${playerSymbol}`);
+				if (this.env.ENVIRONMENT !== 'production') console.log(`New player ${playerId} joined with symbol ${playerSymbol}`);
 			}
 
 			// Cancel cleanup alarm since we have an active player
@@ -394,11 +431,11 @@ export class GameSession extends DurableObject<Env> {
 			if (connectedPlayerCount === 0) {
 				// Both players disconnected - cleanup in 1 minute
 				cleanupTimeout = 60000; // 1 minute
-				console.log('Both players disconnected, scheduling 1-minute cleanup');
+				if (this.env.ENVIRONMENT !== 'production') console.log('Both players disconnected, scheduling 1-minute cleanup');
 			} else {
 				// One player still connected - cleanup in 10 minutes
 				cleanupTimeout = 600000; // 10 minutes
-				console.log('One player disconnected, scheduling 10-minute cleanup');
+				if (this.env.ENVIRONMENT !== 'production') console.log('One player disconnected, scheduling 10-minute cleanup');
 			}
 
 			this.scheduleCleanupAlarm(cleanupTimeout);
@@ -468,7 +505,7 @@ export class GameSession extends DurableObject<Env> {
 			const alarmTime = Date.now() + delayMs;
 			this.cleanupAlarmId = `cleanup-${Date.now()}`;
 			this.ctx.storage.setAlarm(alarmTime);
-			console.log(`Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
+			if (this.env.ENVIRONMENT !== 'production') console.log(`Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
 		} catch (error) {
 			console.error('Error scheduling cleanup alarm:', error);
 		}
@@ -480,7 +517,7 @@ export class GameSession extends DurableObject<Env> {
 			if (this.cleanupAlarmId) {
 				this.ctx.storage.deleteAlarm();
 				this.cleanupAlarmId = null;
-				console.log('Cancelled cleanup alarm - players active');
+				if (this.env.ENVIRONMENT !== 'production') console.log('Cancelled cleanup alarm - players active');
 			}
 		} catch (error) {
 			console.error('Error cancelling cleanup alarm:', error);
@@ -490,17 +527,17 @@ export class GameSession extends DurableObject<Env> {
 	// Durable Object alarm handler
 	alarm() {
 		try {
-			console.log(`Cleanup alarm triggered for GameSession ${this.gameId}`);
+			if (this.env.ENVIRONMENT !== 'production') console.log(`Cleanup alarm triggered for GameSession ${this.gameId}`);
 			this.cleanupAlarmId = null;
 
 			// Check if we have any connected players
 			const hasConnectedPlayers = Array.from(this.players.values()).some((player) => player.connected);
 
 			if (!hasConnectedPlayers) {
-				console.log('No connected players found, initiating cleanup');
+				if (this.env.ENVIRONMENT !== 'production') console.log('No connected players found, initiating cleanup');
 				this.cleanupStaleConnections();
 			} else {
-				console.log('Connected players found, rescheduling cleanup alarm');
+				if (this.env.ENVIRONMENT !== 'production') console.log('Connected players found, rescheduling cleanup alarm');
 				// Use 10-minute timeout since at least one player is connected
 				this.scheduleCleanupAlarm(600000); // Reschedule for 10 minutes
 			}

@@ -3,7 +3,11 @@ import { GameAPIClient } from "../lib/websocket";
 
 export interface MatchmakingScreenProps {
   playerId: string;
-  onGameFound: (gameId: string, playerSymbol: "X" | "O") => void;
+  onGameFound: (
+    gameId: string,
+    playerSymbol: "X" | "O",
+    connectToken: string
+  ) => void;
   onCancel: () => void;
 }
 
@@ -45,7 +49,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
 
         if (result.matched) {
           // Game found immediately
-          onGameFound(result.gameId, result.yourSymbol);
+          onGameFound(result.gameId, result.yourSymbol, result.connectToken);
           return;
         }
 
@@ -75,7 +79,11 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
 
               if (joinResult.matched) {
                 clearInterval(pollInterval);
-                onGameFound(joinResult.gameId, joinResult.yourSymbol);
+                onGameFound(
+                  joinResult.gameId,
+                  joinResult.yourSymbol,
+                  joinResult.connectToken
+                );
                 return;
               }
 

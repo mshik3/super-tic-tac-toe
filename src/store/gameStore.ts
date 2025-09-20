@@ -68,7 +68,11 @@ interface GameStore {
   setScreen: (screen: Screen) => void;
   setPlayerNickname: (nickname: string) => void;
   findOnlineGame: () => void;
-  connectToGame: (gameId: string, playerSymbol: PlayerSymbol) => void;
+  connectToGame: (
+    gameId: string,
+    playerSymbol: PlayerSymbol,
+    connectToken?: string
+  ) => void;
   disconnectFromGame: () => void;
   handleServerMessage: (message: ServerMessage) => void;
 }
@@ -245,13 +249,21 @@ export const useGameStore = create<GameStore>()(
             });
           },
 
-          connectToGame: (gameId: string, playerSymbol: PlayerSymbol) => {
+          connectToGame: (
+            gameId: string,
+            playerSymbol: PlayerSymbol,
+            connectToken?: string
+          ) => {
             const { playerId, apiClient } = get();
 
             // Disconnect existing WebSocket if any
             get().disconnectFromGame();
 
-            const wsUrl = apiClient.getWebSocketUrl(gameId, playerId);
+            const wsUrl = apiClient.getWebSocketUrl(
+              gameId,
+              playerId,
+              connectToken
+            );
 
             const websocket = new GameWebSocket({
               url: wsUrl,
