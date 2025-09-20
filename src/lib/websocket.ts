@@ -2,6 +2,7 @@ import type {
   ClientMessage,
   ServerMessage,
   MakeMovePayload,
+  QueueStatusPayload,
 } from "../types/messages";
 
 export type WebSocketStatus =
@@ -158,9 +159,9 @@ export class GameAPIClient {
     // Prefer Vite define, fallback to env, then hardcoded (legacy)
     const definedUrl =
       typeof __WORKER_URL__ !== "undefined" ? __WORKER_URL__ : undefined;
-    const envUrl = (import.meta as any).env?.VITE_WORKER_URL as
-      | string
-      | undefined;
+    // Vite exposes typed env via ImportMetaEnv, but handle undefined for SSR/tools
+    const envUrl = (import.meta as unknown as { env?: Record<string, string> })
+      .env?.VITE_WORKER_URL as string | undefined;
     this.baseUrl =
       baseUrl ||
       definedUrl ||
@@ -168,7 +169,17 @@ export class GameAPIClient {
       "https://super-tic-tac-toe-worker.mshik3.workers.dev";
   }
 
-  async joinQueue(playerId: string): Promise<any> {
+  async joinQueue(
+    playerId: string
+  ): Promise<
+    | {
+        matched: true;
+        gameId: string;
+        yourSymbol: "X" | "O";
+        connectToken: string;
+      }
+    | ({ matched: false } & QueueStatusPayload)
+  > {
     try {
       const response = await fetch(`${this.baseUrl}/queue/join`, {
         method: "POST",
@@ -212,7 +223,9 @@ export class GameAPIClient {
     }
   }
 
-  async leaveQueue(playerId: string): Promise<any> {
+  async leaveQueue(
+    playerId: string
+  ): Promise<{ success: boolean; playersInQueue: number }> {
     try {
       const response = await fetch(`${this.baseUrl}/queue/leave`, {
         method: "POST",
@@ -249,7 +262,7 @@ export class GameAPIClient {
     }
   }
 
-  async getQueueStatus(): Promise<any> {
+  async getQueueStatus(): Promise<QueueStatusPayload> {
     try {
       const response = await fetch(`${this.baseUrl}/queue/status`);
 
@@ -296,7 +309,9 @@ export class GameAPIClient {
     return `${wsUrl}/game?${search.toString()}`;
   }
 
-  async getGameInfo(gameId: string): Promise<any> {
+  async getGameInfo(
+    gameId: string
+  ): Promise<{ gameId: string; playerCount: number; status: string }> {
     try {
       const response = await fetch(
         `${this.baseUrl}/game/game-info?gameId=${gameId}`

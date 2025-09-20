@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GameAPIClient } from "../lib/websocket";
 
 export interface MatchmakingScreenProps {
@@ -29,7 +29,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
     useState<boolean>(false);
   const [, setRetryCountdown] = useState<number | null>(null);
 
-  const apiClient = new GameAPIClient();
+  const apiClient = useMemo(() => new GameAPIClient(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,7 +180,14 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
         clearTimeout(retryTimeout);
       }
     };
-  }, [playerId, onGameFound]);
+  }, [
+    playerId,
+    onGameFound,
+    apiClient,
+    backoffDelay,
+    consecutiveFailures,
+    isCircuitBreakerOpen,
+  ]);
 
   const handleCancel = async () => {
     try {

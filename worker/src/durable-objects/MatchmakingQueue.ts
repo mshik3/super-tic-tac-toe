@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { QueueEntry, QueueStatusPayload, OpponentFoundPayload, ServerMessage } from '../types/messages';
+import type { QueueEntry } from '../types/messages';
 
 export class MatchmakingQueue extends DurableObject<Env> {
 	private queue: QueueEntry[] = [];
