@@ -111,7 +111,9 @@ export class GameSession extends DurableObject<Env> {
 				await this.ctx.storage.put('allowedPlayers', Array.from(this.allowedPlayers.entries()));
 				await this.ctx.storage.put('gameId', body.gameId);
 				return new Response('ok');
-			} catch {}
+			} catch (error) {
+				console.error('Failed to initialize session from /init:', error);
+			}
 			return new Response('Invalid request', { status: 400 });
 		}
 
@@ -271,7 +273,7 @@ export class GameSession extends DurableObject<Env> {
 				default:
 					this.sendError(playerId, 'Invalid request');
 			}
-		} catch (error) {
+		} catch {
 			this.sendError(playerId, 'Invalid message format');
 		}
 	}

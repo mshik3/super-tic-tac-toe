@@ -42,7 +42,10 @@ export default {
 				}
 				// Allow localhost in non-production environments
 				if (isDev && incomingUrl.hostname === 'localhost') return incoming;
-			} catch {}
+			} catch (error) {
+				// Ignore malformed Origin header but continue with base security headers
+				console.warn('Origin parse failed:', error);
+			}
 			return null;
 		};
 

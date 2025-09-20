@@ -167,6 +167,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 				}
 			);
 		} catch (error) {
+			console.error('Error in handleJoinQueue:', error);
 			return new Response(JSON.stringify({ error: 'Invalid request' }), {
 				status: 400,
 				headers: { 'Content-Type': 'application/json' },
@@ -222,6 +223,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 				}
 			);
 		} catch (error) {
+			console.error('Error in handleLeaveQueue:', error);
 			return new Response(JSON.stringify({ error: 'Invalid request' }), {
 				status: 400,
 				headers: { 'Content-Type': 'application/json' },
