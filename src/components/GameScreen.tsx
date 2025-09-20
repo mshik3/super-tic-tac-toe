@@ -15,6 +15,8 @@ import {
   useConnectionStatus,
   usePlayerSymbol,
   useOpponentConnected,
+  useOpponentNickname,
+  usePlayerNickname,
   useDisconnectFromGame,
   useFindOnlineGame,
 } from "../store/gameStore";
@@ -35,6 +37,8 @@ export const GameScreen: React.FC = () => {
   const connectionStatus = useConnectionStatus();
   const playerSymbol = usePlayerSymbol();
   const opponentConnected = useOpponentConnected();
+  const opponentNickname = useOpponentNickname();
+  const playerNickname = usePlayerNickname();
   const disconnectFromGame = useDisconnectFromGame();
   const findOnlineGame = useFindOnlineGame();
 
@@ -97,7 +101,11 @@ export const GameScreen: React.FC = () => {
             </button>
           </div>
           <h1 className="text-xl font-bold text-gray-900">
-            Super Tic-Tac-Toe {gameMode === "online" && "- Online"}
+            {gameMode === "online" && playerSymbol
+              ? `${playerNickname || "You"} (${playerSymbol}) vs ${
+                  opponentNickname || "Opponent"
+                }`
+              : `Super Tic-Tac-Toe`}
           </h1>
           <div className="flex items-center space-x-2">
             <button
@@ -112,7 +120,11 @@ export const GameScreen: React.FC = () => {
         {/* Desktop header title */}
         <div className="hidden md:block">
           <h1 className="text-2xl font-bold text-gray-900 text-center">
-            Super Tic-Tac-Toe {gameMode === "online" && "- Online"}
+            {gameMode === "online" && playerSymbol
+              ? `${playerNickname || "You"} (${playerSymbol}) vs ${
+                  opponentNickname || "Opponent"
+                }`
+              : `Super Tic-Tac-Toe`}
           </h1>
         </div>
 
@@ -144,7 +156,12 @@ export const GameScreen: React.FC = () => {
               )}
             </div>
             <div className="flex items-center space-x-1">
-              <span>Opponent:</span>
+              <span>
+                {playerNickname || "You"}
+                {playerSymbol ? ` (${playerSymbol})` : ""}
+                {" vs "}
+                {opponentNickname || "Opponent"}
+              </span>
               <span
                 className={
                   opponentConnected ? "text-green-600" : "text-red-600"
@@ -164,6 +181,8 @@ export const GameScreen: React.FC = () => {
             status={connectionStatus}
             opponentConnected={opponentConnected}
             playerSymbol={playerSymbol}
+            playerNickname={playerNickname}
+            opponentNickname={opponentNickname}
           />
         </div>
       )}

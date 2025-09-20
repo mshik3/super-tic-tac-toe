@@ -23,7 +23,7 @@ export class GameSession extends DurableObject<Env> {
 	private cleanupAlarmId: string | null = null;
 	private moves: StoredMove[] = [];
 	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
-	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string }> = new Map(); // admitted players and tokens
+	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -93,7 +93,7 @@ export class GameSession extends DurableObject<Env> {
 				}
 				const body = JSON.parse(bodyText) as {
 					gameId: string;
-					players: Array<{ id: string; symbol: PlayerSymbol; token: string }>;
+					players: Array<{ id: string; symbol: PlayerSymbol; token: string; nickname?: string }>;
 				};
 				if (!body || typeof body !== 'object' || !body.gameId || !Array.isArray(body.players) || body.players.length !== 2) {
 					return new Response('Invalid init payload', { status: 400 });
@@ -105,7 +105,7 @@ export class GameSession extends DurableObject<Env> {
 					if (!/^[a-zA-Z0-9\-_]+$/.test(p.id) || (p.symbol !== 'X' && p.symbol !== 'O') || typeof p.token !== 'string') {
 						return new Response('Invalid player data', { status: 400 });
 					}
-					this.allowedPlayers.set(p.id, { symbol: p.symbol, token: p.token });
+					this.allowedPlayers.set(p.id, { symbol: p.symbol, token: p.token, nickname: p.nickname });
 				}
 				// Persist allowed players and game id
 				await this.ctx.storage.put('allowedPlayers', Array.from(this.allowedPlayers.entries()));
@@ -187,6 +187,7 @@ export class GameSession extends DurableObject<Env> {
 					websocket: server,
 					connected: true,
 					lastPing: Date.now(),
+					nickname: this.allowedPlayers.get(playerId)?.nickname,
 				};
 
 				this.players.set(playerId, playerConnection);
@@ -563,6 +564,8 @@ export class GameSession extends DurableObject<Env> {
 			currentPlayer: this.gameState.currentPlayer,
 			status: this.gameState.status,
 			opponentConnected: this.getOpponentConnected(playerId),
+			yourNickname: this.allowedPlayers.get(playerId)?.nickname,
+			opponentNickname: this.getOpponentNickname(playerId),
 			moves: this.moves,
 		};
 
@@ -595,6 +598,15 @@ export class GameSession extends DurableObject<Env> {
 			}
 		}
 		return false;
+	}
+
+	private getOpponentNickname(playerId: string): string | undefined {
+		for (const [id, player] of this.players) {
+			if (id !== playerId) {
+				return player.nickname ?? this.allowedPlayers.get(id)?.nickname;
+			}
+		}
+		return undefined;
 	}
 
 	private sendToPlayer(playerId: string, message: ServerMessage) {

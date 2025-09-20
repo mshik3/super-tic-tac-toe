@@ -49,6 +49,9 @@ export interface GameStatePayload {
 	currentPlayer: PlayerSymbol;
 	status: GameStatus;
 	opponentConnected: boolean;
+	// Optional for backward compatibility; provided when available by server
+	yourNickname?: string;
+	opponentNickname?: string;
 	moves: StoredMove[];
 }
 
@@ -98,6 +101,7 @@ export interface QueueEntry {
 	playerId: string;
 	joinedAt: number;
 	websocket?: WebSocket;
+	nickname?: string;
 }
 
 export interface PlayerConnection {
@@ -106,4 +110,5 @@ export interface PlayerConnection {
 	websocket: WebSocket;
 	connected: boolean;
 	lastPing: number;
+	nickname?: string;
 }

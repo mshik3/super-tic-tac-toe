@@ -54,6 +54,7 @@ interface GameStore {
   gameId: string | null;
   connectionStatus: WebSocketStatus;
   opponentConnected: boolean;
+  opponentNickname: string | null;
   websocket: GameWebSocket | null;
   apiClient: GameAPIClient;
 
@@ -116,6 +117,7 @@ export const useGameStore = create<GameStore>()(
           gameId: null,
           connectionStatus: "disconnected",
           opponentConnected: false,
+          opponentNickname: null,
           websocket: null,
           apiClient: new GameAPIClient(),
 
@@ -305,6 +307,7 @@ export const useGameStore = create<GameStore>()(
               moves: [],
               connectionStatus: "disconnected",
               opponentConnected: false,
+              opponentNickname: null,
               currentScreen: "menu",
               gameMode: "local",
               error: null,
@@ -331,6 +334,7 @@ export const useGameStore = create<GameStore>()(
                   gameState: localGameState,
                   playerSymbol: gameStatePayload.yourSymbol, // Update player symbol from server
                   opponentConnected: gameStatePayload.opponentConnected,
+                  opponentNickname: gameStatePayload.opponentNickname ?? null,
                   error: null,
                 });
 
@@ -469,6 +473,7 @@ export const useGameStore = create<GameStore>()(
         gameId: null,
         connectionStatus: "disconnected",
         opponentConnected: false,
+        opponentNickname: null,
         websocket: null,
         apiClient: new GameAPIClient(),
 
@@ -705,6 +710,7 @@ export const useGameStore = create<GameStore>()(
             moves: [],
             connectionStatus: "disconnected",
             opponentConnected: false,
+            opponentNickname: null,
             currentScreen: "menu",
             gameMode: "local",
             error: null,
@@ -743,6 +749,7 @@ export const useGameStore = create<GameStore>()(
                 pendingMoves: [], // Reset pending moves for new game state
                 playerSymbol: gameStatePayload.yourSymbol, // Update player symbol from server
                 opponentConnected: gameStatePayload.opponentConnected,
+                opponentNickname: gameStatePayload.opponentNickname ?? null,
                 error: null,
               });
 
@@ -872,6 +879,10 @@ export const usePlayerSymbol = () =>
 export const useOpponentConnected = () =>
   useGameStore((state) => state.opponentConnected);
 export const usePlayerId = () => useGameStore((state) => state.playerId);
+export const useOpponentNickname = () =>
+  useGameStore((state) => state.opponentNickname);
+export const usePlayerNickname = () =>
+  useGameStore((state) => state.playerNickname);
 
 // Individual action hooks to prevent re-render issues
 export const useStartNewGame = () =>

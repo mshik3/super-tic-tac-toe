@@ -3,6 +3,7 @@ import { GameAPIClient } from "../lib/websocket";
 
 export interface MatchmakingScreenProps {
   playerId: string;
+  playerNickname?: string;
   onGameFound: (
     gameId: string,
     playerSymbol: "X" | "O",
@@ -13,6 +14,7 @@ export interface MatchmakingScreenProps {
 
 export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   playerId,
+  playerNickname,
   onGameFound,
   onCancel,
 }) => {
@@ -43,7 +45,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
         setError(null);
 
         // Join the queue
-        const result = await apiClient.joinQueue(playerId);
+        const result = await apiClient.joinQueue(playerId, playerNickname);
 
         if (cancelled) return;
 
@@ -74,7 +76,10 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
               }
 
               // Check if we've been matched by trying to join again
-              const joinResult = await apiClient.joinQueue(playerId);
+              const joinResult = await apiClient.joinQueue(
+                playerId,
+                playerNickname
+              );
               if (cancelled) return;
 
               if (joinResult.matched) {

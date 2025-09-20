@@ -5,12 +5,16 @@ export interface ConnectionStatusProps {
   status: WebSocketStatus;
   opponentConnected?: boolean;
   playerSymbol?: "X" | "O" | null;
+  playerNickname?: string | null;
+  opponentNickname?: string | null;
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   status,
   opponentConnected,
   playerSymbol,
+  playerNickname,
+  opponentNickname,
 }) => {
   const getStatusColor = () => {
     switch (status) {
@@ -76,7 +80,12 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 
         {status === "connected" && (
           <div className="flex items-center space-x-1 text-gray-600">
-            <span>Opponent:</span>
+            <span>
+              {playerNickname ? `${playerNickname}` : "You"}
+              {playerSymbol ? ` (${playerSymbol})` : ""}
+              {" vs "}
+              {opponentNickname || "Opponent"}
+            </span>
             <span
               className={opponentConnected ? "text-green-600" : "text-red-600"}
             >

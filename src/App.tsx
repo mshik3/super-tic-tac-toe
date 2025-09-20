@@ -8,6 +8,16 @@ import {
   useFindOnlineGame,
   useConnectToGame,
   usePlayerId,
+  useGameMode,
+  useGameState,
+  usePlayerSymbol,
+  useConnectionStatus,
+  useOpponentConnected,
+  
+  // selectors for nickname
+  
+} from "./store/gameStore";
+import { useGameStore } from "./store/gameStore";
 } from "./store/gameStore";
 
 function App() {
@@ -17,6 +27,7 @@ function App() {
   const findOnlineGame = useFindOnlineGame();
   const connectToGame = useConnectToGame();
   const playerId = usePlayerId();
+  const playerNickname = useGameStore((s) => s.playerNickname);
 
   const handlePlayLocal = () => {
     setGameMode("local");
@@ -53,6 +64,7 @@ function App() {
       return (
         <MatchmakingScreen
           playerId={playerId}
+          playerNickname={playerNickname}
           onGameFound={handleGameFound}
           onCancel={handleCancelSearch}
         />

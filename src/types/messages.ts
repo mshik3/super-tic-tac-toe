@@ -61,6 +61,9 @@ export interface GameStatePayload {
   currentPlayer: PlayerSymbol;
   status: GameStatus;
   opponentConnected: boolean;
+  // Optional for backward compatibility; provided when available by server
+  yourNickname?: string;
+  opponentNickname?: string;
   moves?: StoredMove[]; // Optional for backward compatibility
 }
 

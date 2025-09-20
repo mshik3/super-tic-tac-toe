@@ -74,12 +74,38 @@ export class MatchmakingQueue extends DurableObject<Env> {
 				});
 			}
 
-			const { playerId } = JSON.parse(body) as { playerId: string };
+			const { playerId, nickname } = JSON.parse(body) as { playerId: string; nickname?: string };
 
-			// NOTE: If/when display names are sent here, apply the same validation
-			// rules as in frontend `src/utils/nickname.ts` (ASCII letters/digits/spaces,
-			// 3-20 chars, profanity filtering). Consider duplicating a minimal validator
-			// in the worker or sharing via a common package.
+			// Minimal nickname validation (ASCII letters/digits/spaces, 3-20, basic profanity)
+			let sanitizedNickname: string | undefined = undefined;
+			if (typeof nickname === 'string') {
+				const trimmed = nickname.trim();
+				if (trimmed.length > 0) {
+					// Only allow ASCII letters, digits, and spaces
+					if (!/^[A-Za-z0-9 ]+$/.test(trimmed)) {
+						return new Response(JSON.stringify({ error: 'Invalid request' }), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json' },
+						});
+					}
+					if (trimmed.length < 3 || trimmed.length > 20) {
+						return new Response(JSON.stringify({ error: 'Invalid request' }), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json' },
+						});
+					}
+					// Basic profanity blocklist
+					const blocked = ['fuck', 'shit', 'bitch', 'asshole', 'dick', 'cunt', 'pussy', 'slut', 'whore', 'porn', 'xxx'];
+					const normalized = trimmed.toLowerCase().replace(/\s+/g, '');
+					if (blocked.some((w) => normalized.includes(w))) {
+						return new Response(JSON.stringify({ error: 'Invalid request' }), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json' },
+						});
+					}
+					sanitizedNickname = trimmed;
+				}
+			}
 
 			// Security: Validate playerId format and sanitize
 			if (!playerId || typeof playerId !== 'string' || playerId.length > 100) {
@@ -136,6 +162,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			const queueEntry: QueueEntry = {
 				playerId,
 				joinedAt: Date.now(),
+				nickname: sanitizedNickname,
 			};
 
 			this.queue.push(queueEntry);
@@ -276,11 +303,13 @@ export class MatchmakingQueue extends DurableObject<Env> {
 					playerId: player1.playerId,
 					symbol: 'X',
 					token: tokenPlayer1,
+					nickname: player1.nickname,
 				},
 				{
 					playerId: player2.playerId,
 					symbol: 'O',
 					token: tokenPlayer2,
+					nickname: player2.nickname,
 				}
 			);
 
