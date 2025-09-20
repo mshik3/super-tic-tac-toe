@@ -198,6 +198,10 @@ export class GameSession extends DurableObject<Env> {
 
 			// Set up WebSocket message handler
 			server.addEventListener('message', async (event) => {
+				// NOTE: If future client messages include display names, enforce the
+				// same nickname validation as frontend `src/utils/nickname.ts` before
+				// storing or broadcasting. Keep ASCII letters/digits/spaces only,
+				// length 3-20, and basic profanity filtering.
 				await this.handleWebSocketMessage(playerId, event.data);
 			});
 

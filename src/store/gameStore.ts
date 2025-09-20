@@ -19,6 +19,7 @@ import { devtools } from "zustand/middleware";
 import { moveToChessNotation, type GameMove } from "../utils/chessNotation";
 import { GameWebSocket, GameAPIClient } from "../lib/websocket";
 import type { WebSocketStatus } from "../lib/websocket";
+import { validateNickname } from "../utils/nickname";
 
 export type GameMode = "local" | "online";
 export type Screen = "menu" | "searching" | "playing";
@@ -237,7 +238,12 @@ export const useGameStore = create<GameStore>()(
           },
 
           setPlayerNickname: (nickname: string) => {
-            set({ playerNickname: nickname });
+            const result = validateNickname(nickname);
+            if (!result.isValid) {
+              set({ error: result.errors[0] || "Invalid display name" });
+              return;
+            }
+            set({ playerNickname: result.sanitized, error: null });
           },
 
           findOnlineGame: () => {
@@ -640,7 +646,12 @@ export const useGameStore = create<GameStore>()(
         },
 
         setPlayerNickname: (nickname: string) => {
-          set({ playerNickname: nickname });
+          const result = validateNickname(nickname);
+          if (!result.isValid) {
+            set({ error: result.errors[0] || "Invalid display name" });
+            return;
+          }
+          set({ playerNickname: result.sanitized, error: null });
         },
 
         findOnlineGame: () => {

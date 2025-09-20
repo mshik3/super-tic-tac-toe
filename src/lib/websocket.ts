@@ -169,9 +169,7 @@ export class GameAPIClient {
       "https://super-tic-tac-toe-worker.mshik3.workers.dev";
   }
 
-  async joinQueue(
-    playerId: string
-  ): Promise<
+  async joinQueue(playerId: string): Promise<
     | {
         matched: true;
         gameId: string;

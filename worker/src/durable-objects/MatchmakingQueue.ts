@@ -76,6 +76,11 @@ export class MatchmakingQueue extends DurableObject<Env> {
 
 			const { playerId } = JSON.parse(body) as { playerId: string };
 
+			// NOTE: If/when display names are sent here, apply the same validation
+			// rules as in frontend `src/utils/nickname.ts` (ASCII letters/digits/spaces,
+			// 3-20 chars, profanity filtering). Consider duplicating a minimal validator
+			// in the worker or sharing via a common package.
+
 			// Security: Validate playerId format and sanitize
 			if (!playerId || typeof playerId !== 'string' || playerId.length > 100) {
 				return new Response(JSON.stringify({ error: 'Invalid request' }), {
