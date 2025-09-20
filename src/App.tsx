@@ -8,17 +8,8 @@ import {
   useFindOnlineGame,
   useConnectToGame,
   usePlayerId,
-  useGameMode,
-  useGameState,
-  usePlayerSymbol,
-  useConnectionStatus,
-  useOpponentConnected,
-  
-  // selectors for nickname
-  
 } from "./store/gameStore";
 import { useGameStore } from "./store/gameStore";
-} from "./store/gameStore";
 
 function App() {
   const currentScreen = useCurrentScreen();
