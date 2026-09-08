@@ -9,9 +9,10 @@ paths:
 ## Matchmaking Flow
 1. Player enters nickname, clicks "Play Online"
 2. `MatchmakingScreen` calls `POST /queue/join` with `{ playerId, nickname }`
-3. Polls every ~1s until `matched: true` (circuit breaker after 5 failures)
+3. Polls every ~2s until `matched: true` (circuit breaker after 5 failures)
 4. `connectToGame` opens WebSocket to `/game?gameId=&playerId=&token=`
 5. `GameSession` DO validates one-time token, sends `GAME_STATE`
+6. Disconnect during play: 60s alarm, then remaining player wins by forfeit; session storage wiped 30s after any finish
 
 ## WebSocket Messages
 - Server → Client: `GAME_STATE`, `MOVE_RESULT`, `GAME_OVER`, `ERROR`
@@ -27,7 +28,7 @@ paths:
 ## Security
 - One-time `connectToken` per player per game (no token = 401)
 - Server-authoritative move validation
-- Rate limits: queue 30 req/min/IP, moves 5 per 10s per player
+- Rate limits: queue 60 req/min/IP, moves 5 per 10s per player
 - Input: player IDs `^[a-zA-Z0-9\-_]+$`, nicknames ASCII 3-20 chars
 - CORS: `ALLOWED_ORIGINS` env var, localhost in non-production
 - Message size: WS 1KB, HTTP 1KB (queue) / 2KB (game init)

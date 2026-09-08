@@ -48,6 +48,7 @@ export interface GameStatePayload {
 	board: GameBoard;
 	currentPlayer: PlayerSymbol;
 	status: GameStatus;
+	winner?: GameWinner;
 	opponentConnected: boolean;
 	// Optional for backward compatibility; provided when available by server
 	yourNickname?: string;

@@ -14,7 +14,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	}
 
 	// Security: Rate limiting helper
-	private checkRateLimit(ip: string, maxRequests: number = 30, windowMs: number = 60000): boolean {
+	private checkRateLimit(ip: string, maxRequests: number = 60, windowMs: number = 60000): boolean {
 		const now = Date.now();
 		const limit = this.rateLimitMap.get(ip);
 

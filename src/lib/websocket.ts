@@ -263,44 +263,6 @@ export class GameAPIClient {
     }
   }
 
-  async getQueueStatus(): Promise<QueueStatusPayload> {
-    try {
-      const response = await fetch(`${this.baseUrl}/queue/status`);
-
-      if (!response.ok) {
-        if (response.status === 0 || !response.status) {
-          throw new Error(
-            "Network connection failed. Please check your internet connection and try again."
-          );
-        }
-        if (response.status >= 500) {
-          throw new Error(
-            "Server is temporarily unavailable. Please try again in a moment."
-          );
-        }
-        if (response.status === 429) {
-          throw new Error(
-            "Too many requests. Please wait a moment and try again."
-          );
-        }
-        throw new Error(
-          `Failed to get queue status: ${
-            response.statusText || "Unknown error"
-          }`
-        );
-      }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        throw new Error(
-          "Unable to connect to game server. This may be due to network issues or server maintenance."
-        );
-      }
-      throw error;
-    }
-  }
-
   getWebSocketUrl(gameId: string, playerId: string, token?: string): string {
     const wsUrl = this.baseUrl
       .replace("http://", "ws://")
@@ -308,45 +270,5 @@ export class GameAPIClient {
     const search = new URLSearchParams({ gameId, playerId });
     if (token) search.set("token", token);
     return `${wsUrl}/game?${search.toString()}`;
-  }
-
-  async getGameInfo(
-    gameId: string
-  ): Promise<{ gameId: string; playerCount: number; status: string }> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/game/game-info?gameId=${gameId}`
-      );
-
-      if (!response.ok) {
-        if (response.status === 0 || !response.status) {
-          throw new Error(
-            "Network connection failed. Please check your internet connection and try again."
-          );
-        }
-        if (response.status >= 500) {
-          throw new Error(
-            "Server is temporarily unavailable. Please try again in a moment."
-          );
-        }
-        if (response.status === 404) {
-          throw new Error(
-            "Game not found. It may have expired or been removed."
-          );
-        }
-        throw new Error(
-          `Failed to get game info: ${response.statusText || "Unknown error"}`
-        );
-      }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        throw new Error(
-          "Unable to connect to game server. This may be due to network issues or server maintenance."
-        );
-      }
-      throw error;
-    }
   }
 }

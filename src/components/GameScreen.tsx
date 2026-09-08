@@ -15,6 +15,7 @@ import {
   usePlayerSymbol,
   useOpponentConnected,
   useOpponentNickname,
+  useGameOverReason,
   usePlayerNickname,
   useDisconnectFromGame,
   useFindOnlineGame,
@@ -36,6 +37,7 @@ export const GameScreen: React.FC = () => {
   const playerSymbol = usePlayerSymbol();
   const opponentConnected = useOpponentConnected();
   const opponentNickname = useOpponentNickname();
+  const gameOverReason = useGameOverReason();
   const playerNickname = usePlayerNickname();
   const disconnectFromGame = useDisconnectFromGame();
   const findOnlineGame = useFindOnlineGame();
@@ -170,6 +172,19 @@ export const GameScreen: React.FC = () => {
           />
         </div>
 
+        {isOnline && !isFinished && !opponentConnected && gameState.status === "playing" && (
+          <div
+            className="px-4 py-2 text-center text-sm font-medium"
+            style={{
+              backgroundColor: "rgba(245, 192, 48, 0.08)",
+              borderTop: "1px solid rgba(245, 192, 48, 0.2)",
+              color: "#F0B500",
+            }}
+          >
+            Opponent disconnected. They have 60 seconds to return or they forfeit.
+          </div>
+        )}
+
         {/* Error banner */}
         {error && (
           <div
@@ -238,6 +253,14 @@ export const GameScreen: React.FC = () => {
                           ? "YOU LOSE"
                           : `${winnerName} WINS`
                       : `${winnerName} WINS`}
+                    {gameOverReason === "forfeit" && (
+                      <span
+                        className="ml-2 text-xs font-medium tracking-wide normal-case"
+                        style={{ color: "var(--text-dim)" }}
+                      >
+                        by forfeit
+                      </span>
+                    )}
                   </span>
                 </div>
               )}

@@ -55,6 +55,7 @@ interface GameStore {
   connectionStatus: WebSocketStatus;
   opponentConnected: boolean;
   opponentNickname: string | null;
+  gameOverReason: GameOverPayload["reason"] | null;
   websocket: GameWebSocket | null;
   apiClient: GameAPIClient;
 
@@ -117,6 +118,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
   connectionStatus: "disconnected",
   opponentConnected: false,
   opponentNickname: null,
+  gameOverReason: null,
   websocket: null,
   apiClient: new GameAPIClient(),
 
@@ -333,6 +335,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
       connectionStatus: "disconnected",
       opponentConnected: false,
       opponentNickname: null,
+      gameOverReason: null,
       currentScreen: "menu",
       gameMode: "local",
       error: null,
@@ -351,7 +354,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
           board: payload.board,
           currentPlayer: payload.currentPlayer,
           status: payload.status,
-          winner: null,
+          winner: payload.winner ?? null,
           createdAt: Date.now(),
           lastMove: Date.now(),
         };
@@ -372,6 +375,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
           playerSymbol: payload.yourSymbol,
           opponentConnected: payload.opponentConnected,
           opponentNickname: payload.opponentNickname ?? null,
+          gameOverReason: payload.status === "finished" ? get().gameOverReason : null,
           error: null,
         });
         break;
@@ -446,6 +450,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
               winner: payload.winner,
               board: payload.finalBoard,
             },
+            gameOverReason: payload.reason,
           });
         }
         break;
@@ -479,6 +484,7 @@ export const usePlayerSymbol = () => useGameStore((s) => s.playerSymbol);
 export const useOpponentConnected = () => useGameStore((s) => s.opponentConnected);
 export const usePlayerId = () => useGameStore((s) => s.playerId);
 export const useOpponentNickname = () => useGameStore((s) => s.opponentNickname);
+export const useGameOverReason = () => useGameStore((s) => s.gameOverReason);
 export const usePlayerNickname = () => useGameStore((s) => s.playerNickname);
 
 export const useStartNewGame = () => useGameStore((s) => s.startNewGame);

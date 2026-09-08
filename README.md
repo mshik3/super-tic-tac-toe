@@ -120,7 +120,6 @@ npm run deploy:all
 super-tic-tac-toe/
 ├── src/                   # Frontend React app
 │   ├── components/        # React components
-│   ├── hooks/            # Custom React hooks
 │   ├── lib/              # Utility libraries
 │   ├── store/            # Zustand state management
 │   └── types/            # TypeScript type definitions

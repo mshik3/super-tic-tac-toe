@@ -24,7 +24,7 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   const [playersInQueue, setPlayersInQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const backoffDelayRef = useRef(1000);
+  const backoffDelayRef = useRef(2000);
   const consecutiveFailuresRef = useRef(0);
   const isCircuitBreakerOpenRef = useRef(false);
 

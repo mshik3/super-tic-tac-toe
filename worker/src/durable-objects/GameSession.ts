@@ -20,7 +20,6 @@ export class GameSession extends DurableObject<Env> {
 	private players: Map<string, PlayerConnection> = new Map();
 	private gameId: string = '';
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
-	private cleanupAlarmId: string | null = null;
 	private moves: StoredMove[] = [];
 	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
@@ -29,38 +28,14 @@ export class GameSession extends DurableObject<Env> {
 		super(ctx, env);
 	}
 
-	// Move storage methods
-	private async loadMoves(): Promise<StoredMove[]> {
-		try {
-			const stored = await this.ctx.storage.get<StoredMove[]>('moves');
-			return stored || [];
-		} catch (error) {
-			console.error('Error loading moves:', error);
-			return [];
-		}
-	}
-
-	private async saveMoves(): Promise<void> {
-		try {
-			await this.ctx.storage.put('moves', this.moves);
-		} catch (error) {
-			console.error('Error saving moves:', error);
-		}
-	}
-
-	private async addMove(move: StoredMove): Promise<void> {
-		this.moves.push(move);
-		await this.saveMoves();
+	private async persist(): Promise<void> {
+		await this.ctx.storage.put({ moves: this.moves, gameState: this.gameState });
 	}
 
 	private async initializeGameSession(gameId: string): Promise<void> {
 		this.gameId = gameId;
-		this.moves = await this.loadMoves();
-
-		// If no moves exist, this is a new game
-		if (this.moves.length === 0) {
-			this.gameState = createNewGame(gameId);
-		}
+		this.moves = (await this.ctx.storage.get<StoredMove[]>('moves')) ?? [];
+		this.gameState = (await this.ctx.storage.get<GameState>('gameState')) ?? createNewGame(gameId);
 	}
 
 	// Security: Rate limiting for moves to prevent spam
@@ -109,7 +84,8 @@ export class GameSession extends DurableObject<Env> {
 				}
 				// Persist allowed players and game id
 				await this.ctx.storage.put('allowedPlayers', Array.from(this.allowedPlayers.entries()));
-				await this.ctx.storage.put('gameId', body.gameId);
+				await this.persist();
+				await this.updateAlarm();
 				return new Response('ok');
 			} catch (error) {
 				console.error('Failed to initialize session from /init:', error);
@@ -194,8 +170,6 @@ export class GameSession extends DurableObject<Env> {
 				if (this.env.ENVIRONMENT !== 'production') console.log(`New player ${playerId} joined with symbol ${playerSymbol}`);
 			}
 
-			// Cancel cleanup alarm since we have an active player
-			this.cancelCleanupAlarm();
 
 			// Set up WebSocket message handler
 			server.addEventListener('message', async (event) => {
@@ -211,14 +185,12 @@ export class GameSession extends DurableObject<Env> {
 				this.handlePlayerDisconnect(playerId);
 			});
 
-			// Send initial game state to the connecting player
-			this.sendGameStateToPlayer(playerId);
-
-			// If this is the second player, start the game
-			if (this.players.size >= 2) {
+			if (this.players.size >= 2 && this.gameState!.status === 'waiting') {
 				this.gameState!.status = 'playing';
-				this.broadcastGameState();
+				await this.persist();
 			}
+			this.broadcastGameState();
+			await this.updateAlarm();
 
 			return new Response(null, {
 				status: 101,
@@ -383,8 +355,8 @@ export class GameSession extends DurableObject<Env> {
 			cellIndex: move.cellIndex,
 		};
 
-		// Store move persistently
-		await this.addMove(storedMove);
+		this.moves.push(storedMove);
+		await this.persist();
 
 		// Update sequence number tracking for this player
 		if (sequenceNumber !== undefined) {
@@ -418,139 +390,65 @@ export class GameSession extends DurableObject<Env> {
 				payload: gameOverPayload,
 			});
 
-			// Schedule cleanup since game is over
-			this.scheduleCleanupAlarm(30000); // 30 seconds after game ends
+			await this.updateAlarm();
 		}
 	}
 
-	private handlePlayerDisconnect(playerId: string) {
+	private async handlePlayerDisconnect(playerId: string) {
 		const player = this.players.get(playerId);
-		if (player) {
-			player.connected = false;
+		if (!player) return;
+		player.connected = false;
+		this.broadcastGameState();
+		await this.updateAlarm();
+	}
 
-			// Notify other players about disconnection
-			this.broadcastGameState();
-
-			// Determine cleanup timeout based on connection state
-			const connectedPlayerCount = this.getConnectedPlayerCount();
-			let cleanupTimeout: number;
-
-			if (connectedPlayerCount === 0) {
-				// Both players disconnected - cleanup in 1 minute
-				cleanupTimeout = 60000; // 1 minute
-				if (this.env.ENVIRONMENT !== 'production') console.log('Both players disconnected, scheduling 1-minute cleanup');
-			} else {
-				// One player still connected - cleanup in 10 minutes
-				cleanupTimeout = 600000; // 10 minutes
-				if (this.env.ENVIRONMENT !== 'production') console.log('One player disconnected, scheduling 10-minute cleanup');
-			}
-
-			this.scheduleCleanupAlarm(cleanupTimeout);
+	// Alarm policy: no alarm while a game is in progress with everyone connected.
+	// Finished games are wiped after 30s. Otherwise (waiting for a player, or
+	// someone dropped) the alarm fires in 60s: a lone connected player wins by
+	// forfeit, an empty session is wiped.
+	private async updateAlarm() {
+		const allConnected = [...this.players.values()].every((p) => p.connected);
+		if (this.gameState?.status === 'finished') {
+			await this.ctx.storage.setAlarm(Date.now() + 30_000);
+		} else if (this.gameState?.status === 'playing' && allConnected) {
+			await this.ctx.storage.deleteAlarm();
+		} else {
+			await this.ctx.storage.setAlarm(Date.now() + 60_000);
 		}
 	}
 
-	// Security: Cleanup stale connections and games
-	private cleanupStaleConnections() {
-		try {
-			const now = Date.now();
-			// Use 10 minutes for stale timeout to match our new policy
-			const staleTimeout = 600000; // 10 minutes
-
-			for (const [playerId, player] of this.players) {
-				if (!player.connected && now - player.lastPing > staleTimeout) {
-					// Close websocket if still open
-					try {
-						player.websocket.close(1000, 'Cleanup: Stale connection');
-					} catch (error) {
-						console.warn(`Failed to close websocket for player ${playerId}:`, error);
-					}
-					this.players.delete(playerId);
-					console.log(`Removed stale player: ${playerId}`);
-				}
-			}
-
-			// If no players remain, prepare for hibernation
-			if (this.players.size === 0) {
-				this.prepareForHibernation();
-			}
-		} catch (error) {
-			console.error('Error during cleanup:', error);
+	async alarm() {
+		const connected = [...this.players.values()].filter((p) => p.connected);
+		if (this.gameState?.status === 'playing' && connected.length === 1) {
+			this.gameState.status = 'finished';
+			this.gameState.winner = connected[0].symbol;
+			await this.persist();
+			const payload: GameOverPayload = { winner: this.gameState.winner, reason: 'forfeit', finalBoard: this.gameState.board };
+			this.broadcast({ type: 'GAME_OVER', payload });
+			await this.updateAlarm();
+			return;
 		}
+		if (this.gameState?.status === 'waiting') {
+			this.broadcast({ type: 'ERROR', payload: { message: 'Opponent never connected' } });
+		}
+		await this.destroy();
 	}
 
-	// Prepare the Durable Object for hibernation
-	private prepareForHibernation() {
-		try {
-			console.log(`Preparing GameSession ${this.gameId} for hibernation`);
-
-			// Clear all state
-			this.gameState = null;
-			this.gameId = '';
-			this.moveRateLimit.clear();
-			this.players.clear();
-
-			// Cancel any pending cleanup alarms
-			if (this.cleanupAlarmId) {
-				this.ctx.storage.deleteAlarm();
-				this.cleanupAlarmId = null;
+	private async destroy() {
+		for (const player of this.players.values()) {
+			try {
+				player.websocket.close(1000, 'Game closed');
+			} catch {
+				// already closed
 			}
-
-			console.log(`GameSession hibernated successfully`);
-		} catch (error) {
-			console.error('Error preparing for hibernation:', error);
 		}
-	}
-
-	// Schedule cleanup alarm
-	private scheduleCleanupAlarm(delayMs: number) {
-		try {
-			// Cancel existing alarm if any
-			if (this.cleanupAlarmId) {
-				this.ctx.storage.deleteAlarm();
-			}
-
-			const alarmTime = Date.now() + delayMs;
-			this.cleanupAlarmId = `cleanup-${Date.now()}`;
-			this.ctx.storage.setAlarm(alarmTime);
-			if (this.env.ENVIRONMENT !== 'production') console.log(`Scheduled cleanup alarm for ${new Date(alarmTime).toISOString()}`);
-		} catch (error) {
-			console.error('Error scheduling cleanup alarm:', error);
-		}
-	}
-
-	// Cancel cleanup alarm when players are active
-	private cancelCleanupAlarm() {
-		try {
-			if (this.cleanupAlarmId) {
-				this.ctx.storage.deleteAlarm();
-				this.cleanupAlarmId = null;
-				if (this.env.ENVIRONMENT !== 'production') console.log('Cancelled cleanup alarm - players active');
-			}
-		} catch (error) {
-			console.error('Error cancelling cleanup alarm:', error);
-		}
-	}
-
-	// Durable Object alarm handler
-	alarm() {
-		try {
-			if (this.env.ENVIRONMENT !== 'production') console.log(`Cleanup alarm triggered for GameSession ${this.gameId}`);
-			this.cleanupAlarmId = null;
-
-			// Check if we have any connected players
-			const hasConnectedPlayers = Array.from(this.players.values()).some((player) => player.connected);
-
-			if (!hasConnectedPlayers) {
-				if (this.env.ENVIRONMENT !== 'production') console.log('No connected players found, initiating cleanup');
-				this.cleanupStaleConnections();
-			} else {
-				if (this.env.ENVIRONMENT !== 'production') console.log('Connected players found, rescheduling cleanup alarm');
-				// Use 10-minute timeout since at least one player is connected
-				this.scheduleCleanupAlarm(600000); // Reschedule for 10 minutes
-			}
-		} catch (error) {
-			console.error('Error in alarm handler:', error);
-		}
+		this.players.clear();
+		this.allowedPlayers.clear();
+		this.moveRateLimit.clear();
+		this.playerSequenceNumbers.clear();
+		this.gameState = null;
+		this.moves = [];
+		await this.ctx.storage.deleteAll();
 	}
 
 	private sendGameStateToPlayer(playerId: string) {
@@ -563,6 +461,7 @@ export class GameSession extends DurableObject<Env> {
 			board: this.gameState.board,
 			currentPlayer: this.gameState.currentPlayer,
 			status: this.gameState.status,
+			winner: this.gameState.winner,
 			opponentConnected: this.getOpponentConnected(playerId),
 			yourNickname: this.allowedPlayers.get(playerId)?.nickname,
 			opponentNickname: this.getOpponentNickname(playerId),
