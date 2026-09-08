@@ -6,6 +6,8 @@
 npm run dev              # Vite dev server (localhost:5173)
 npm test                 # Vitest
 npm run build            # production build to dist/
+npm run deploy:pages     # build + direct upload to Pages (git integration is not active)
+npm run deploy:all       # pages + worker
 
 # Worker
 cd worker
