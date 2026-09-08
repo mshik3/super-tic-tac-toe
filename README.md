@@ -62,7 +62,7 @@ A modern, real-time multiplayer implementation of Ultimate Tic-Tac-Toe built wit
 
 ## 🚀 Deployment Setup
 
-This project deploys both the frontend (Pages) and the worker with the Wrangler CLI. CI runs lint, typecheck, tests, and build on every push.
+The frontend is built by git-connected Cloudflare Pages on push to main; the worker is deployed with Wrangler. CI runs lint, typecheck, tests, and build on every push.
 
 ### One-Time Setup: Connect GitHub to Cloudflare Pages
 
@@ -97,7 +97,7 @@ This project deploys both the frontend (Pages) and the worker with the Wrangler 
 **Frontend changes:**
 
 ```bash
-npm run deploy:pages
+git push   # Pages builds main automatically; npm run deploy:pages for a manual upload
 ```
 
 **Worker changes:**
