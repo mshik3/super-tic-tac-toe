@@ -156,7 +156,7 @@ export function applyMove(gameState: GameState, move: Move): MoveResult {
   if (mainBoardWinner) {
     newGameState.winner = mainBoardWinner;
     newGameState.status = "finished";
-  } else if (isGameDraw(newGameState.board.main)) {
+  } else if (isGameDraw(newGameState.board.main, newGameState.board.sub)) {
     newGameState.winner = "draw";
     newGameState.status = "finished";
   }

@@ -1,73 +1,376 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Site-wide tokens ──────────────────────────────────────── */
+:root {
+  /* Player colors (site-wide UI: HUD, move log, etc.) */
+  --x: #22d3ee; /* Tailwind cyan-400 — bright & clear */
+  --o: #f87171; /* Tailwind red-400  — warm coral, not harsh */
+  --x-dim: rgba(34, 211, 238, 0.12);
+  --o-dim: rgba(248, 113, 113, 0.12);
+  --x-glow: rgba(34, 211, 238, 0.4);
+  --o-glow: rgba(248, 113, 113, 0.4);
+
+  /* Site shell */
+  --bg: #060c17;
+  --surface: #0c1624;
+  --surface-2: #122033;
+  --surface-3: #1a2d46;
+  --border: #1e3050;
+  --border-2: #274060;
+  --text: #cdd8e8; /* slate-300 — comfortable to read */
+  --text-dim: #4a6280;
+  --text-dim-2: #2e3f54;
+
+  /* ── Dark board theme (default) ─────────────────────────── */
+  --board-outer-bg: linear-gradient(155deg, #0e1e35 0%, #08111e 100%);
+  --board-outer-border: #1e3050;
+  --board-outer-shadow: 0 0 80px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.025), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* Sub-board: bg color shows through gaps as lines */
+  --board-sub-bg: #080e1a;
+  --board-sub-border: #1e3252;
+
+  /* Cells — KEY: clearly distinguished from sub-board bg */
+  --board-cell-bg: #182840;
+  --board-cell-radius: 5px;
+
+  /* Player colors for the board specifically */
+  --board-x: #22d3ee;
+  --board-o: #f87171;
+  --board-x-hover-bg: rgba(34, 211, 238, 0.18);
+  --board-o-hover-bg: rgba(248, 113, 113, 0.18);
+
+  /* Active sub-board */
+  --board-active-x-border: rgba(34, 211, 238, 0.65);
+  --board-active-x-bg: rgba(34, 211, 238, 0.04);
+  --board-active-x-shadow: 0 0 20px rgba(34, 211, 238, 0.2),
+    inset 0 0 30px rgba(34, 211, 238, 0.04);
+  --board-active-o-border: rgba(248, 113, 113, 0.65);
+  --board-active-o-bg: rgba(248, 113, 113, 0.04);
+  --board-active-o-shadow: 0 0 20px rgba(248, 113, 113, 0.2),
+    inset 0 0 30px rgba(248, 113, 113, 0.04);
+
+  /* Winner overlays */
+  --board-win-x-bg: linear-gradient(
+    135deg,
+    rgba(34, 211, 238, 0.2) 0%,
+    rgba(34, 211, 238, 0.08) 100%
+  );
+  --board-win-x-border: rgba(34, 211, 238, 0.55);
+  --board-win-x-text: #22d3ee;
+  --board-win-x-shadow: 0 0 30px rgba(34, 211, 238, 0.7),
+    0 0 70px rgba(34, 211, 238, 0.3);
+  --board-win-o-bg: linear-gradient(
+    135deg,
+    rgba(248, 113, 113, 0.2) 0%,
+    rgba(248, 113, 113, 0.08) 100%
+  );
+  --board-win-o-border: rgba(248, 113, 113, 0.55);
+  --board-win-o-text: #f87171;
+  --board-win-o-shadow: 0 0 30px rgba(248, 113, 113, 0.7),
+    0 0 70px rgba(248, 113, 113, 0.3);
+}
+
+/* ── Light board theme override ────────────────────────────── */
+/* Only the board-specific variables change; site shell stays dark */
+.board-light {
+  /* Outer frame stays dark (matches site) — only inner changes */
+  --board-sub-bg: #6a8fae; /* steel-blue gap = visible lines */
+  --board-sub-border: #8aafc8;
+
+  /* Cells: clean, cool white */
+  --board-cell-bg: #ecf3fb;
+  --board-cell-radius: 4px;
+
+  /* Player colors adapted for light background */
+  --board-x: #0284c7; /* sky-600  — deep, readable on light */
+  --board-o: #dc2626; /* red-600  — deep, readable on light */
+  --board-x-hover-bg: rgba(2, 132, 199, 0.13);
+  --board-o-hover-bg: rgba(220, 38, 38, 0.13);
+
+  /* Active sub-board */
+  --board-active-x-border: rgba(2, 132, 199, 0.7);
+  --board-active-x-bg: rgba(2, 132, 199, 0.05);
+  --board-active-x-shadow: 0 0 20px rgba(2, 132, 199, 0.25),
+    inset 0 0 30px rgba(2, 132, 199, 0.05);
+  --board-active-o-border: rgba(220, 38, 38, 0.7);
+  --board-active-o-bg: rgba(220, 38, 38, 0.05);
+  --board-active-o-shadow: 0 0 20px rgba(220, 38, 38, 0.25),
+    inset 0 0 30px rgba(220, 38, 38, 0.05);
+
+  /* Winner overlays */
+  --board-win-x-bg: linear-gradient(
+    135deg,
+    rgba(2, 132, 199, 0.22) 0%,
+    rgba(2, 132, 199, 0.1) 100%
+  );
+  --board-win-x-border: rgba(2, 132, 199, 0.6);
+  --board-win-x-text: #0284c7;
+  --board-win-x-shadow: 0 0 24px rgba(2, 132, 199, 0.6);
+  --board-win-o-bg: linear-gradient(
+    135deg,
+    rgba(220, 38, 38, 0.22) 0%,
+    rgba(220, 38, 38, 0.1) 100%
+  );
+  --board-win-o-border: rgba(220, 38, 38, 0.6);
+  --board-win-o-text: #dc2626;
+  --board-win-o-shadow: 0 0 24px rgba(220, 38, 38, 0.6);
+}
+
 @layer base {
   * {
-    @apply border-gray-200;
+    box-sizing: border-box;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 font-sans;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: "Rajdhani", system-ui, sans-serif;
     margin: 0;
     min-height: 100vh;
   }
 }
 
 @layer components {
+  /* ─── Game Cell ──────────────────────────────────────────── */
   .game-cell {
-    /* Responsive size: smaller on mobile, same as before on desktop */
-    width: clamp(1.5rem, 6vw, 3rem);
-    height: clamp(1.5rem, 6vw, 3rem);
-    font-size: clamp(0.875rem, 3.5vw, 1.25rem);
-    @apply border border-gray-300 flex items-center justify-center font-bold cursor-pointer transition-colors duration-150 touch-manipulation;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    font-size: clamp(1rem, 4.5vmin, 2rem);
+    background-color: var(--board-cell-bg);
+    border: none;
+    border-radius: var(--board-cell-radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-family: "Rajdhani", sans-serif;
+    cursor: default;
+    touch-action: manipulation;
+    transition: background-color 0.12s ease, transform 0.08s ease;
+    user-select: none;
   }
 
-  .game-cell:hover {
-    @apply bg-gray-100;
+  .game-cell.x-valid {
+    cursor: pointer;
+  }
+
+  .game-cell.o-valid {
+    cursor: pointer;
+  }
+
+  .game-cell.x-valid:hover {
+    background-color: var(--board-x-hover-bg);
+    transform: scale(0.94);
+  }
+
+  .game-cell.o-valid:hover {
+    background-color: var(--board-o-hover-bg);
+    transform: scale(0.94);
   }
 
   .game-cell.occupied {
-    @apply cursor-not-allowed;
+    cursor: default;
   }
 
   .game-cell.x {
-    @apply text-blue-600;
+    color: var(--board-x);
   }
 
   .game-cell.o {
-    @apply text-red-600;
+    color: var(--board-o);
   }
 
+  /* ─── Sub Board ──────────────────────────────────────────── */
   .sub-board {
-    /* Tighter padding on mobile; retains previous padding on md+ */
-    @apply grid grid-cols-3 gap-1 p-1 border-2 border-gray-400 bg-white rounded-lg;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+    padding: 5px;
+    background-color: var(--board-sub-bg);
+    border: 1.5px solid var(--board-sub-border);
+    border-radius: 10px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease,
+      background-color 0.2s ease;
   }
 
-  @screen md {
-    .sub-board {
-      @apply p-2;
-    }
+  .sub-board.active.x-active {
+    border-color: var(--board-active-x-border);
+    background-color: var(--board-active-x-bg);
+    box-shadow: var(--board-active-x-shadow);
   }
 
-  .sub-board.active {
-    @apply border-primary-500 bg-primary-50;
+  .sub-board.active.o-active {
+    border-color: var(--board-active-o-border);
+    background-color: var(--board-active-o-bg);
+    box-shadow: var(--board-active-o-shadow);
   }
 
   .sub-board.won {
-    @apply bg-gray-100 opacity-75;
+    opacity: 0.88;
   }
 
+  /* ─── Winner / Draw overlays ─────────────────────────────── */
+  .winner-overlay-x {
+    background: var(--board-win-x-bg);
+    border: 1.5px solid var(--board-win-x-border);
+  }
+
+  .winner-overlay-o {
+    background: var(--board-win-o-bg);
+    border: 1.5px solid var(--board-win-o-border);
+  }
+
+  .winner-text-x {
+    color: var(--board-win-x-text);
+    text-shadow: var(--board-win-x-shadow);
+  }
+
+  .winner-text-o {
+    color: var(--board-win-o-text);
+    text-shadow: var(--board-win-o-shadow);
+  }
+
+  /* ─── Main Board ─────────────────────────────────────────── */
   .main-board {
-    /* Compact spacing on mobile; keep original on md+ */
-    @apply grid grid-cols-3 gap-2 p-3 bg-gray-100 rounded-xl shadow-lg;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: min(88vmin, 560px);
+    aspect-ratio: 1 / 1;
+    gap: 9px;
+    padding: 12px;
+    background: var(--board-outer-bg);
+    border-radius: 16px;
+    border: 1px solid var(--board-outer-border);
+    box-shadow: var(--board-outer-shadow);
+    flex-shrink: 0;
+    transition: background 0.4s ease;
   }
 
-  @screen md {
-    .main-board {
-      @apply gap-4 p-6;
+  /* ─── Board theme toggle button ──────────────────────────── */
+  .board-theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid var(--border);
+    background-color: var(--surface-2);
+    color: var(--text-dim);
+  }
+
+  .board-theme-toggle:hover {
+    border-color: var(--border-2);
+    color: var(--text);
+  }
+
+  /* ─── Animations ─────────────────────────────────────────── */
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
     }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes winner-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    65% {
+      transform: scale(1.15);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(0.85);
+      opacity: 0.7;
+    }
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  @keyframes radar-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease forwards;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.25s ease forwards;
+  }
+
+  .animate-winner-pop {
+    animation: winner-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  .animate-pulse-ring {
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+
+  .animate-radar-rotate {
+    animation: radar-rotate 3s linear infinite;
+  }
+
+  .animate-blink {
+    animation: blink 1.2s ease-in-out infinite;
+  }
+
+  /* ─── Background grid texture ────────────────────────────── */
+  .bg-grid {
+    background-image: linear-gradient(
+        rgba(30, 48, 80, 0.45) 1px,
+        transparent 1px
+      ),
+      linear-gradient(90deg, rgba(30, 48, 80, 0.45) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 }

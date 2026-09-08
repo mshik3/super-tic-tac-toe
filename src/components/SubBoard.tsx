@@ -1,5 +1,5 @@
 import React from "react";
-import type { SubBoard as SubBoardType } from "../types/game";
+import type { SubBoard as SubBoardType, PlayerSymbol } from "../types/game";
 import { Cell } from "./Cell";
 import { clsx } from "clsx";
 import { checkSubBoardWinner, isSubBoardCompleted } from "../lib/winDetection";
@@ -9,11 +9,9 @@ interface SubBoardProps {
   boardIndex: number;
   isActive: boolean;
   validMoves: Array<{ boardIndex: number; cellIndex: number }>;
-  hoveredCell: { boardIndex: number; cellIndex: number } | null;
   onCellClick: (boardIndex: number, cellIndex: number) => void;
-  onCellHover: (boardIndex: number, cellIndex: number) => void;
-  onCellLeave: () => void;
   disabled?: boolean;
+  currentPlayer?: PlayerSymbol;
 }
 
 export const SubBoard: React.FC<SubBoardProps> = React.memo(
@@ -22,75 +20,80 @@ export const SubBoard: React.FC<SubBoardProps> = React.memo(
     boardIndex,
     isActive,
     validMoves,
-    hoveredCell,
     onCellClick,
-    onCellHover,
-    onCellLeave,
     disabled = false,
+    currentPlayer,
   }) => {
     const winner = checkSubBoardWinner(board);
     const isCompleted = isSubBoardCompleted(board);
 
-    // Get valid moves for this specific board
     const validMovesForBoard = validMoves.filter(
       (move) => move.boardIndex === boardIndex
     );
 
-    const isValidMove = (cellIndex: number): boolean => {
-      return validMovesForBoard.some((move) => move.cellIndex === cellIndex);
-    };
+    const isValidMove = (cellIndex: number): boolean =>
+      validMovesForBoard.some((move) => move.cellIndex === cellIndex);
 
-    const isCellHovered = (cellIndex: number): boolean => {
-      return (
-        hoveredCell?.boardIndex === boardIndex &&
-        hoveredCell?.cellIndex === cellIndex
-      );
-    };
+    const activeColorClass =
+      isActive && !isCompleted
+        ? currentPlayer === "X"
+          ? "x-active"
+          : "o-active"
+        : "";
 
     return (
       <div
         className={clsx("sub-board relative", {
           active: isActive && !isCompleted,
           won: isCompleted,
-          "opacity-60": disabled,
+          [activeColorClass]: !!activeColorClass,
         })}
         role="grid"
         aria-label={`Sub-board ${boardIndex + 1} ${
           winner ? `won by ${winner}` : isActive ? "(active)" : ""
         }`}
       >
-        {/* Winner overlay for completed boards */}
+        {/* Winner overlay — uses CSS vars so it respects board-light/dark theme */}
         {winner && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 rounded-lg z-10">
+          <div
+            className={`absolute inset-0 flex items-center justify-center rounded-lg z-10 animate-winner-pop winner-overlay-${winner.toLowerCase()}`}
+            style={{ backdropFilter: "blur(2px)" }}
+          >
             <span
-              className={clsx("text-6xl font-bold", {
-                "text-blue-600": winner === "X",
-                "text-red-600": winner === "O",
-              })}
+              className={`font-bold leading-none select-none winner-text-${winner.toLowerCase()}`}
+              style={{ fontSize: "clamp(2.5rem, 10vmin, 4.5rem)" }}
             >
               {winner}
             </span>
           </div>
         )}
 
-        {/* Draw overlay for drawn boards */}
+        {/* Draw overlay */}
         {isCompleted && !winner && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-200 bg-opacity-90 rounded-lg z-10">
-            <span className="text-2xl font-bold text-gray-600">DRAW</span>
+          <div
+            className="absolute inset-0 flex items-center justify-center rounded-lg z-10"
+            style={{ background: "rgba(6, 12, 23, 0.82)", backdropFilter: "blur(2px)" }}
+          >
+            <span
+              className="font-bold tracking-widest uppercase"
+              style={{
+                color: "var(--text-dim)",
+                fontSize: "clamp(0.55rem, 1.8vmin, 0.8rem)",
+              }}
+            >
+              DRAW
+            </span>
           </div>
         )}
 
-        {/* Grid of cells */}
         {board.map((cell, cellIndex) => (
           <Cell
             key={`${boardIndex}-${cellIndex}`}
             value={cell}
             onClick={() => onCellClick(boardIndex, cellIndex)}
             isValidMove={isValidMove(cellIndex)}
-            isHovered={isCellHovered(cellIndex)}
-            onMouseEnter={() => onCellHover(boardIndex, cellIndex)}
-            onMouseLeave={onCellLeave}
             disabled={disabled || isCompleted}
+            currentPlayer={currentPlayer}
           />
         ))}
       </div>

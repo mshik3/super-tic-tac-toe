@@ -81,11 +81,10 @@ interface GameStore {
 
 // Generate a cryptographically secure unique player ID
 const generatePlayerId = () => {
-  // Fallback for environments without crypto.randomUUID()
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return `player-${crypto.randomUUID()}`;
   }
-  // Secure fallback using crypto.getRandomValues()
+  // Fallback for environments without crypto.randomUUID()
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
   const hex = Array.from(array, (byte) =>
@@ -94,809 +93,400 @@ const generatePlayerId = () => {
   return `player-${hex}`;
 };
 
-export const useGameStore = create<GameStore>()(
-  import.meta.env.DEV
-    ? devtools(
-        (set, get) => ({
-          // Initial state
-          gameState: null,
-          moves: [],
-          pendingMoves: [],
-          moveSequenceNumber: 0,
-          isLoading: false,
-          error: null,
-          currentScreen: "menu",
+// Single store implementation — devtools middleware applied conditionally below.
+// Using `any` for set/get here is intentional: the external API is fully typed
+// by the create<GameStore>() wrapper; the internal Zustand mutator types differ
+// between plain and devtools variants and cannot be unified without `any`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const storeImpl = (set: any, get: any): GameStore => ({
+  // Initial state
+  gameState: null,
+  moves: [],
+  pendingMoves: [],
+  moveSequenceNumber: 0,
+  isLoading: false,
+  error: null,
+  currentScreen: "menu",
 
-          // Game mode
-          gameMode: "local",
+  gameMode: "local",
 
-          // Online state
-          playerId: generatePlayerId(),
-          playerNickname: "Anonymous",
-          playerSymbol: null,
-          gameId: null,
-          connectionStatus: "disconnected",
-          opponentConnected: false,
-          opponentNickname: null,
-          websocket: null,
-          apiClient: new GameAPIClient(),
+  playerId: generatePlayerId(),
+  playerNickname: "Anonymous",
+  playerSymbol: null,
+  gameId: null,
+  connectionStatus: "disconnected",
+  opponentConnected: false,
+  opponentNickname: null,
+  websocket: null,
+  apiClient: new GameAPIClient(),
 
-          // Actions
-          startNewGame: () => {
-            const gameId = `local-${Date.now()}`;
-            const newGameState = createNewGame(gameId);
+  // ─── Local game actions ────────────────────────────────────────────────────
 
-            set({
-              gameState: newGameState,
-              moves: [],
-              error: null,
-              isLoading: false,
-              currentScreen: "playing",
-              gameMode: "local",
-            });
-          },
+  startNewGame: () => {
+    const gameId = `local-${Date.now()}`;
+    const newGameState = createNewGame(gameId);
+    set({
+      gameState: newGameState,
+      moves: [],
+      error: null,
+      isLoading: false,
+      currentScreen: "playing",
+      gameMode: "local",
+    });
+  },
 
-          makeMove: (boardIndex: number, cellIndex: number) => {
-            const { gameState, moves, gameMode, websocket, playerSymbol } =
-              get();
+  makeMove: (boardIndex: number, cellIndex: number) => {
+    const {
+      gameState,
+      moves,
+      pendingMoves,
+      moveSequenceNumber,
+      gameMode,
+      websocket,
+      playerSymbol,
+    } = get();
 
-            if (!gameState) {
-              set({ error: "No active game" });
-              return;
-            }
+    if (!gameState) {
+      set({ error: "No active game" });
+      return;
+    }
 
-            if (gameState.status !== "playing") {
-              set({ error: "Game is not in progress" });
-              return;
-            }
+    if (gameState.status !== "playing") {
+      set({ error: "Game is not in progress" });
+      return;
+    }
 
-            // For online games, send move via WebSocket
-            if (gameMode === "online" && websocket) {
-              // Check if it's our turn
-              if (gameState.currentPlayer !== playerSymbol) {
-                set({ error: "Not your turn" });
-                return;
-              }
+    // ── Online: optimistic update, then send to server ──
+    if (gameMode === "online" && websocket) {
+      if (gameState.currentPlayer !== playerSymbol) {
+        set({ error: "Not your turn" });
+        return;
+      }
 
-              // Send move to server (optimistic update will happen on server response)
-              const success = websocket.makeMove(boardIndex, cellIndex);
-              if (!success) {
-                set({ error: "Failed to send move" });
-              }
-              return;
-            }
+      const move = createMove(boardIndex, cellIndex, playerSymbol);
+      const result = applyMove(gameState, move);
 
-            // Local game logic
-            const move = createMove(
-              boardIndex,
-              cellIndex,
-              gameState.currentPlayer
-            );
-            const result = applyMove(gameState, move);
+      if (!result.valid) {
+        set({ error: result.error || "Invalid move" });
+        return;
+      }
 
-            if (!result.valid) {
-              set({ error: result.error || "Invalid move" });
-              return;
-            }
+      const notation = moveToChessNotation(move);
+      const gameMove: GameMove = {
+        notation,
+        player: move.player,
+        moveNumber: moves.length + 1,
+        timestamp: move.timestamp,
+      };
 
-            // Create chess notation for the move
-            const notation = moveToChessNotation(move);
-            const gameMove: GameMove = {
-              notation,
-              player: move.player,
-              moveNumber: moves.length + 1,
-              timestamp: move.timestamp,
-            };
+      const pendingMove: PendingMove = {
+        boardIndex,
+        cellIndex,
+        player: playerSymbol,
+        timestamp: move.timestamp,
+        sequenceNumber: moveSequenceNumber + 1,
+      };
 
-            // Update game state with successful move
-            set({
-              gameState: result.newGameState,
-              moves: [...moves, gameMove],
-              error: null,
-            });
-          },
-
-          resetCurrentGame: () => {
-            const { gameState, gameMode } = get();
-
-            if (gameMode === "online") {
-              // For online games, disconnect and return to menu
-              get().disconnectFromGame();
-              return;
-            }
-
-            if (!gameState) {
-              get().startNewGame();
-              return;
-            }
-
-            const resetGameState = resetGame(gameState.gameId);
-            set({
-              gameState: resetGameState,
-              moves: [],
-              error: null,
-            });
-          },
-
-          setError: (error: string | null) => {
-            set({ error });
-          },
-
-          clearError: () => {
-            set({ error: null });
-          },
-
-          // Online actions
-          setGameMode: (mode: GameMode) => {
-            set({ gameMode: mode });
-            if (mode === "local") {
-              // Initialize local game
-              get().startNewGame();
-            }
-          },
-
-          setScreen: (screen: Screen) => {
-            set({ currentScreen: screen });
-          },
-
-          setPlayerNickname: (nickname: string) => {
-            const result = validateNickname(nickname);
-            if (!result.isValid) {
-              set({ error: result.errors[0] || "Invalid display name" });
-              return;
-            }
-            set({ playerNickname: result.sanitized, error: null });
-          },
-
-          findOnlineGame: () => {
-            set({
-              gameMode: "online",
-              currentScreen: "searching",
-              error: null,
-              isLoading: true,
-            });
-          },
-
-          connectToGame: (
-            gameId: string,
-            playerSymbol: PlayerSymbol,
-            connectToken?: string
-          ) => {
-            const { playerId, apiClient } = get();
-
-            // Disconnect existing WebSocket if any
-            get().disconnectFromGame();
-
-            const wsUrl = apiClient.getWebSocketUrl(
-              gameId,
-              playerId,
-              connectToken
-            );
-
-            const websocket = new GameWebSocket({
-              url: wsUrl,
-              onMessage: get().handleServerMessage,
-              onStatusChange: (status) => set({ connectionStatus: status }),
-              onError: (error) => set({ error: error.message }),
-            });
-
-            websocket.connect();
-
-            set({
-              gameId,
-              playerSymbol,
-              websocket,
-              gameMode: "online", // CRITICAL: Keep online mode!
-              currentScreen: "playing",
-              isLoading: false,
-            });
-          },
-
-          disconnectFromGame: () => {
-            const { websocket } = get();
-
-            if (websocket) {
-              websocket.disconnect();
-            }
-
-            set({
-              websocket: null,
-              gameId: null,
-              playerSymbol: null,
-              gameState: null,
-              moves: [],
-              connectionStatus: "disconnected",
-              opponentConnected: false,
-              opponentNickname: null,
-              currentScreen: "menu",
-              gameMode: "local",
-              error: null,
-            });
-          },
-
-          handleServerMessage: (message: ServerMessage) => {
-            switch (message.type) {
-              case "GAME_STATE": {
-                const gameStatePayload = message.payload as GameStatePayload;
-
-                // Convert online game state to local format
-                const localGameState: GameState = {
-                  gameId: gameStatePayload.gameId,
-                  board: gameStatePayload.board,
-                  currentPlayer: gameStatePayload.currentPlayer,
-                  status: gameStatePayload.status,
-                  winner: null, // Will be updated by GAME_OVER message
-                  createdAt: Date.now(),
-                  lastMove: Date.now(),
-                };
-
-                set({
-                  gameState: localGameState,
-                  playerSymbol: gameStatePayload.yourSymbol, // Update player symbol from server
-                  opponentConnected: gameStatePayload.opponentConnected,
-                  opponentNickname: gameStatePayload.opponentNickname ?? null,
-                  error: null,
-                });
-
-                break;
-              }
-
-              case "MOVE_RESULT": {
-                const moveResultPayload = message.payload as MoveResultPayload;
-                const { pendingMoves, moves } = get();
-
-                if (moveResultPayload.valid) {
-                  // Server confirmed the move - remove from pending moves
-                  const updatedPendingMoves = pendingMoves.slice(0, -1); // Remove the last pending move
-
-                  // Update game state with authoritative server result
-                  const updatedGameState: GameState = {
-                    gameId: get().gameId || "",
-                    board: moveResultPayload.board,
-                    currentPlayer: moveResultPayload.currentPlayer,
-                    status: moveResultPayload.gameStatus,
-                    winner: null, // Will be updated by GAME_OVER if needed
-                    createdAt: get().gameState?.createdAt || Date.now(),
-                    lastMove: Date.now(),
-                  };
-
-                  // Process the move for logging (ensures both players see all moves)
-                  let updatedMoves = moves;
-                  if (moveResultPayload.move) {
-                    // Convert StoredMove to GameMove format
-                    const gameMove: GameMove = {
-                      notation: moveResultPayload.move.notation,
-                      player: moveResultPayload.move.player,
-                      moveNumber: moveResultPayload.move.moveNumber,
-                      timestamp: moveResultPayload.move.timestamp,
-                    };
-
-                    // Check if this move is already in our log (from optimistic update)
-                    const moveExists = moves.some(
-                      (m) =>
-                        m.moveNumber === gameMove.moveNumber &&
-                        m.player === gameMove.player &&
-                        m.notation === gameMove.notation
-                    );
-
-                    if (!moveExists) {
-                      // This is an opponent's move, add it to our log
-                      updatedMoves = [...moves, gameMove];
-                      console.log("Added opponent move to log:", gameMove);
-                    } else {
-                      console.log(
-                        "Move already in log (own move confirmed):",
-                        gameMove
-                      );
-                    }
-                  }
-
-                  // The move was already optimistically applied, just confirm it
-                  set({
-                    gameState: updatedGameState,
-                    moves: updatedMoves,
-                    pendingMoves: updatedPendingMoves,
-                    error: null,
-                  });
-                } else {
-                  // Server rejected the move - rollback optimistic update
-                  if (pendingMoves.length > 0) {
-                    // Get the current state without pending moves
-                    const { moves } = get();
-
-                    // Remove the last optimistic move
-                    const rolledBackMoves = moves.slice(0, -1);
-
-                    // We need to reconstruct the game state without the failed move
-                    // For now, request fresh state from server by clearing error
-                    // The server will send updated GAME_STATE
-                    set({
-                      moves: rolledBackMoves,
-                      pendingMoves: pendingMoves.slice(0, -1),
-                      error:
-                        moveResultPayload.error ||
-                        "Move was rejected by server",
-                    });
-                  } else {
-                    set({ error: moveResultPayload.error || "Invalid move" });
-                  }
-                }
-                break;
-              }
-
-              case "GAME_OVER": {
-                const gameOverPayload = message.payload as GameOverPayload;
-                const currentGameState = get().gameState;
-                if (currentGameState) {
-                  set({
-                    gameState: {
-                      ...currentGameState,
-                      status: "finished",
-                      winner: gameOverPayload.winner,
-                      board: gameOverPayload.finalBoard,
-                    },
-                  });
-                }
-                break;
-              }
-
-              case "ERROR":
-                set({ error: (message.payload as ErrorPayload).message });
-                break;
-
-              default:
-                console.warn("Unhandled server message:", message);
-            }
-          },
-        }),
-        {
-          name: "super-tic-tac-toe-store",
-        }
-      )
-    : (set, get) => ({
-        // Initial state
-        gameState: null,
-        moves: [],
-        pendingMoves: [],
-        moveSequenceNumber: 0,
-        isLoading: false,
+      set({
+        gameState: result.newGameState,
+        moves: [...moves, gameMove],
+        pendingMoves: [...pendingMoves, pendingMove],
+        moveSequenceNumber: moveSequenceNumber + 1,
         error: null,
-        currentScreen: "menu",
+      });
 
-        // Game mode
-        gameMode: "local",
+      const success = websocket.makeMove(
+        boardIndex,
+        cellIndex,
+        moveSequenceNumber + 1
+      );
+      if (!success) {
+        // Network failure — roll back the optimistic update
+        set({
+          gameState,
+          moves,
+          pendingMoves,
+          moveSequenceNumber,
+          error: "Failed to send move - please try again",
+        });
+      }
+      return;
+    }
 
-        // Online state
-        playerId: generatePlayerId(),
-        playerNickname: "Anonymous",
-        playerSymbol: null,
-        gameId: null,
-        connectionStatus: "disconnected",
-        opponentConnected: false,
-        opponentNickname: null,
-        websocket: null,
-        apiClient: new GameAPIClient(),
+    // ── Local game ──
+    const move = createMove(boardIndex, cellIndex, gameState.currentPlayer);
+    const result = applyMove(gameState, move);
 
-        // Actions
-        startNewGame: () => {
-          const gameId = `local-${Date.now()}`;
-          const newGameState = createNewGame(gameId);
+    if (!result.valid) {
+      set({ error: result.error || "Invalid move" });
+      return;
+    }
 
-          set({
-            gameState: newGameState,
-            moves: [],
-            error: null,
-            isLoading: false,
-            currentScreen: "playing",
-            gameMode: "local",
-          });
-        },
+    const notation = moveToChessNotation(move);
+    const gameMove: GameMove = {
+      notation,
+      player: move.player,
+      moveNumber: moves.length + 1,
+      timestamp: move.timestamp,
+    };
 
-        makeMove: (boardIndex: number, cellIndex: number) => {
-          const {
-            gameState,
-            moves,
-            pendingMoves,
-            moveSequenceNumber,
-            gameMode,
-            websocket,
-            playerSymbol,
-          } = get();
+    set({
+      gameState: result.newGameState,
+      moves: [...moves, gameMove],
+      error: null,
+    });
+  },
 
-          if (!gameState) {
-            set({ error: "No active game" });
-            return;
-          }
+  resetCurrentGame: () => {
+    const { gameState, gameMode } = get();
 
-          if (gameState.status !== "playing") {
-            set({ error: "Game is not in progress" });
-            return;
-          }
+    if (gameMode === "online") {
+      get().disconnectFromGame();
+      return;
+    }
 
-          // For online games, apply optimistic update then send to server
-          if (gameMode === "online" && websocket) {
-            // Check if it's our turn
-            if (gameState.currentPlayer !== playerSymbol) {
-              set({ error: "Not your turn" });
-              return;
-            }
+    if (!gameState) {
+      get().startNewGame();
+      return;
+    }
 
-            // Create the move for validation and optimistic update
-            const move = createMove(boardIndex, cellIndex, playerSymbol);
-            const result = applyMove(gameState, move);
+    const resetGameState = resetGame(gameState.gameId);
+    set({ gameState: resetGameState, moves: [], error: null });
+  },
 
-            // Validate move locally first
-            if (!result.valid) {
-              set({ error: result.error || "Invalid move" });
-              return;
-            }
+  setError: (error: string | null) => set({ error }),
+  clearError: () => set({ error: null }),
 
-            // Apply optimistic update immediately for instant feedback
-            const notation = moveToChessNotation(move);
-            const gameMove: GameMove = {
-              notation,
-              player: move.player,
-              moveNumber: moves.length + 1,
-              timestamp: move.timestamp,
-            };
+  // ─── Online actions ────────────────────────────────────────────────────────
 
-            const pendingMove: PendingMove = {
-              boardIndex,
-              cellIndex,
-              player: playerSymbol,
-              timestamp: move.timestamp,
-              sequenceNumber: moveSequenceNumber + 1,
-            };
+  setGameMode: (mode: GameMode) => {
+    set({ gameMode: mode });
+    if (mode === "local") {
+      get().startNewGame();
+    }
+  },
 
-            // Update state with optimistic move
-            console.log("Adding own move to log (optimistic):", gameMove);
-            set({
-              gameState: result.newGameState,
-              moves: [...moves, gameMove],
-              pendingMoves: [...pendingMoves, pendingMove],
-              moveSequenceNumber: moveSequenceNumber + 1,
-              error: null,
-            });
+  setScreen: (screen: Screen) => set({ currentScreen: screen }),
 
-            // Send move to server for authoritative validation
-            const success = websocket.makeMove(
-              boardIndex,
-              cellIndex,
-              moveSequenceNumber + 1
-            );
-            if (!success) {
-              // If network fails, we need to rollback the optimistic update
-              set({
-                gameState,
-                moves,
-                pendingMoves,
-                moveSequenceNumber,
-                error: "Failed to send move - please try again",
-              });
-            }
-            return;
-          }
+  setPlayerNickname: (nickname: string) => {
+    const result = validateNickname(nickname);
+    if (!result.isValid) {
+      set({ error: result.errors[0] || "Invalid display name" });
+      return;
+    }
+    set({ playerNickname: result.sanitized, error: null });
+  },
 
-          // Local game logic
-          const move = createMove(
-            boardIndex,
-            cellIndex,
-            gameState.currentPlayer
-          );
-          const result = applyMove(gameState, move);
+  findOnlineGame: () => {
+    set({
+      gameMode: "online",
+      currentScreen: "searching",
+      error: null,
+      isLoading: true,
+    });
+  },
 
-          if (!result.valid) {
-            set({ error: result.error || "Invalid move" });
-            return;
-          }
+  connectToGame: (
+    gameId: string,
+    playerSymbol: PlayerSymbol,
+    connectToken?: string
+  ) => {
+    const { playerId, apiClient } = get();
 
-          // Create chess notation for the move
-          const notation = moveToChessNotation(move);
-          const gameMove: GameMove = {
-            notation,
-            player: move.player,
-            moveNumber: moves.length + 1,
-            timestamp: move.timestamp,
+    // Clean up any existing connection first
+    get().disconnectFromGame();
+
+    const wsUrl = apiClient.getWebSocketUrl(gameId, playerId, connectToken);
+
+    const websocket = new GameWebSocket({
+      url: wsUrl,
+      onMessage: get().handleServerMessage,
+      onStatusChange: (status) => set({ connectionStatus: status }),
+      onError: (error) => set({ error: error.message }),
+    });
+
+    websocket.connect();
+
+    set({
+      gameId,
+      playerSymbol,
+      websocket,
+      gameMode: "online",
+      currentScreen: "playing",
+      isLoading: false,
+    });
+  },
+
+  disconnectFromGame: () => {
+    const { websocket } = get();
+
+    if (websocket) {
+      websocket.disconnect();
+    }
+
+    set({
+      websocket: null,
+      gameId: null,
+      playerSymbol: null,
+      gameState: null,
+      moves: [],
+      connectionStatus: "disconnected",
+      opponentConnected: false,
+      opponentNickname: null,
+      currentScreen: "menu",
+      gameMode: "local",
+      error: null,
+    });
+  },
+
+  // ─── WebSocket message handler ─────────────────────────────────────────────
+
+  handleServerMessage: (message: ServerMessage) => {
+    switch (message.type) {
+      case "GAME_STATE": {
+        const payload = message.payload as GameStatePayload;
+
+        const localGameState: GameState = {
+          gameId: payload.gameId,
+          board: payload.board,
+          currentPlayer: payload.currentPlayer,
+          status: payload.status,
+          winner: null,
+          createdAt: Date.now(),
+          lastMove: Date.now(),
+        };
+
+        const gameMoves: GameMove[] = (payload.moves || []).map(
+          (storedMove: StoredMove) => ({
+            notation: storedMove.notation,
+            player: storedMove.player,
+            moveNumber: storedMove.moveNumber,
+            timestamp: storedMove.timestamp,
+          })
+        );
+
+        set({
+          gameState: localGameState,
+          moves: gameMoves,
+          pendingMoves: [],
+          playerSymbol: payload.yourSymbol,
+          opponentConnected: payload.opponentConnected,
+          opponentNickname: payload.opponentNickname ?? null,
+          error: null,
+        });
+        break;
+      }
+
+      case "MOVE_RESULT": {
+        const payload = message.payload as MoveResultPayload;
+        const { pendingMoves, moves } = get();
+
+        if (payload.valid) {
+          const updatedGameState: GameState = {
+            gameId: get().gameId || "",
+            board: payload.board,
+            currentPlayer: payload.currentPlayer,
+            status: payload.gameStatus,
+            winner: null,
+            createdAt: get().gameState?.createdAt || Date.now(),
+            lastMove: Date.now(),
           };
 
-          // Update game state with successful move
-          set({
-            gameState: result.newGameState,
-            moves: [...moves, gameMove],
-            error: null,
-          });
-        },
+          let updatedMoves = moves;
+          if (payload.move) {
+            const gameMove: GameMove = {
+              notation: payload.move.notation,
+              player: payload.move.player,
+              moveNumber: payload.move.moveNumber,
+              timestamp: payload.move.timestamp,
+            };
 
-        resetCurrentGame: () => {
-          const { gameState, gameMode } = get();
+            // Deduplicate: the move may already be in the log from an optimistic update
+            const alreadyLogged = moves.some(
+              (m: GameMove) =>
+                m.moveNumber === gameMove.moveNumber &&
+                m.player === gameMove.player &&
+                m.notation === gameMove.notation
+            );
 
-          if (gameMode === "online") {
-            // For online games, disconnect and return to menu
-            get().disconnectFromGame();
-            return;
-          }
-
-          if (!gameState) {
-            get().startNewGame();
-            return;
-          }
-
-          const resetGameState = resetGame(gameState.gameId);
-          set({
-            gameState: resetGameState,
-            moves: [],
-            error: null,
-          });
-        },
-
-        setError: (error: string | null) => {
-          set({ error });
-        },
-
-        clearError: () => {
-          set({ error: null });
-        },
-
-        // Online actions
-        setGameMode: (mode: GameMode) => {
-          set({ gameMode: mode });
-          if (mode === "local") {
-            // Initialize local game
-            get().startNewGame();
-          }
-        },
-
-        setScreen: (screen: Screen) => {
-          set({ currentScreen: screen });
-        },
-
-        setPlayerNickname: (nickname: string) => {
-          const result = validateNickname(nickname);
-          if (!result.isValid) {
-            set({ error: result.errors[0] || "Invalid display name" });
-            return;
-          }
-          set({ playerNickname: result.sanitized, error: null });
-        },
-
-        findOnlineGame: () => {
-          set({
-            gameMode: "online",
-            currentScreen: "searching",
-            error: null,
-            isLoading: true,
-          });
-        },
-
-        connectToGame: (gameId: string, playerSymbol: PlayerSymbol) => {
-          const { playerId, apiClient } = get();
-
-          // Disconnect existing WebSocket if any
-          get().disconnectFromGame();
-
-          const wsUrl = apiClient.getWebSocketUrl(gameId, playerId);
-
-          const websocket = new GameWebSocket({
-            url: wsUrl,
-            onMessage: get().handleServerMessage,
-            onStatusChange: (status) => set({ connectionStatus: status }),
-            onError: (error) => set({ error: error.message }),
-          });
-
-          websocket.connect();
-
-          set({
-            gameId,
-            playerSymbol,
-            websocket,
-            gameMode: "online", // CRITICAL: Keep online mode!
-            currentScreen: "playing",
-            isLoading: false,
-          });
-        },
-
-        disconnectFromGame: () => {
-          const { websocket } = get();
-
-          if (websocket) {
-            websocket.disconnect();
-          }
-
-          set({
-            websocket: null,
-            gameId: null,
-            playerSymbol: null,
-            gameState: null,
-            moves: [],
-            connectionStatus: "disconnected",
-            opponentConnected: false,
-            opponentNickname: null,
-            currentScreen: "menu",
-            gameMode: "local",
-            error: null,
-          });
-        },
-
-        handleServerMessage: (message: ServerMessage) => {
-          switch (message.type) {
-            case "GAME_STATE": {
-              const gameStatePayload = message.payload as GameStatePayload;
-
-              // Convert online game state to local format
-              const localGameState: GameState = {
-                gameId: gameStatePayload.gameId,
-                board: gameStatePayload.board,
-                currentPlayer: gameStatePayload.currentPlayer,
-                status: gameStatePayload.status,
-                winner: null, // Will be updated by GAME_OVER message
-                createdAt: Date.now(),
-                lastMove: Date.now(),
-              };
-
-              // Convert StoredMove[] to GameMove[] for consistency (backward compatible)
-              const gameMoves: GameMove[] = (gameStatePayload.moves || []).map(
-                (storedMove: StoredMove) => ({
-                  notation: storedMove.notation,
-                  player: storedMove.player,
-                  moveNumber: storedMove.moveNumber,
-                  timestamp: storedMove.timestamp,
-                })
-              );
-
-              set({
-                gameState: localGameState,
-                moves: gameMoves,
-                pendingMoves: [], // Reset pending moves for new game state
-                playerSymbol: gameStatePayload.yourSymbol, // Update player symbol from server
-                opponentConnected: gameStatePayload.opponentConnected,
-                opponentNickname: gameStatePayload.opponentNickname ?? null,
-                error: null,
-              });
-
-              break;
+            if (!alreadyLogged) {
+              updatedMoves = [...moves, gameMove];
             }
-
-            case "MOVE_RESULT": {
-              const moveResultPayload = message.payload as MoveResultPayload;
-              const { pendingMoves, moves } = get();
-
-              if (moveResultPayload.valid) {
-                // Server confirmed the move - remove from pending moves
-                const updatedPendingMoves = pendingMoves.slice(0, -1); // Remove the last pending move
-
-                // Update game state with authoritative server result
-                const updatedGameState: GameState = {
-                  gameId: get().gameId || "",
-                  board: moveResultPayload.board,
-                  currentPlayer: moveResultPayload.currentPlayer,
-                  status: moveResultPayload.gameStatus,
-                  winner: null, // Will be updated by GAME_OVER if needed
-                  createdAt: get().gameState?.createdAt || Date.now(),
-                  lastMove: Date.now(),
-                };
-
-                // Process the move for logging (ensures both players see all moves)
-                let updatedMoves = moves;
-                if (moveResultPayload.move) {
-                  // Convert StoredMove to GameMove format
-                  const gameMove: GameMove = {
-                    notation: moveResultPayload.move.notation,
-                    player: moveResultPayload.move.player,
-                    moveNumber: moveResultPayload.move.moveNumber,
-                    timestamp: moveResultPayload.move.timestamp,
-                  };
-
-                  // Check if this move is already in our log (from optimistic update)
-                  const moveExists = moves.some(
-                    (m) =>
-                      m.moveNumber === gameMove.moveNumber &&
-                      m.player === gameMove.player &&
-                      m.notation === gameMove.notation
-                  );
-
-                  if (!moveExists) {
-                    // This is an opponent's move, add it to our log
-                    updatedMoves = [...moves, gameMove];
-                    console.log("Added opponent move to log:", gameMove);
-                  } else {
-                    console.log(
-                      "Move already in log (own move confirmed):",
-                      gameMove
-                    );
-                  }
-                }
-
-                // The move was already optimistically applied, just confirm it
-                set({
-                  gameState: updatedGameState,
-                  moves: updatedMoves,
-                  pendingMoves: updatedPendingMoves,
-                  error: null,
-                });
-              } else {
-                // Server rejected the move - rollback optimistic update
-                if (pendingMoves.length > 0) {
-                  // Get the current state without pending moves
-                  const { moves } = get();
-
-                  // Remove the last optimistic move
-                  const rolledBackMoves = moves.slice(0, -1);
-
-                  // We need to reconstruct the game state without the failed move
-                  // For now, request fresh state from server by clearing error
-                  // The server will send updated GAME_STATE
-                  set({
-                    moves: rolledBackMoves,
-                    pendingMoves: pendingMoves.slice(0, -1),
-                    error:
-                      moveResultPayload.error || "Move was rejected by server",
-                  });
-                } else {
-                  set({ error: moveResultPayload.error || "Invalid move" });
-                }
-              }
-              break;
-            }
-
-            case "GAME_OVER": {
-              const gameOverPayload = message.payload as GameOverPayload;
-              const currentGameState = get().gameState;
-              if (currentGameState) {
-                set({
-                  gameState: {
-                    ...currentGameState,
-                    status: "finished",
-                    winner: gameOverPayload.winner,
-                    board: gameOverPayload.finalBoard,
-                  },
-                });
-              }
-              break;
-            }
-
-            case "ERROR":
-              set({ error: (message.payload as ErrorPayload).message });
-              break;
-
-            default:
-              console.warn("Unhandled server message:", message);
           }
-        },
-      })
+
+          set({
+            gameState: updatedGameState,
+            moves: updatedMoves,
+            pendingMoves: pendingMoves.slice(0, -1),
+            error: null,
+          });
+        } else {
+          // Server rejected the move — roll back the last optimistic entry
+          if (pendingMoves.length > 0) {
+            set({
+              moves: moves.slice(0, -1),
+              pendingMoves: pendingMoves.slice(0, -1),
+              error: payload.error || "Move was rejected by server",
+            });
+          } else {
+            set({ error: payload.error || "Invalid move" });
+          }
+        }
+        break;
+      }
+
+      case "GAME_OVER": {
+        const payload = message.payload as GameOverPayload;
+        const currentGameState = get().gameState;
+        if (currentGameState) {
+          set({
+            gameState: {
+              ...currentGameState,
+              status: "finished",
+              winner: payload.winner,
+              board: payload.finalBoard,
+            },
+          });
+        }
+        break;
+      }
+
+      case "ERROR":
+        set({ error: (message.payload as ErrorPayload).message });
+        break;
+
+      default:
+        break;
+    }
+  },
+});
+
+export const useGameStore = create<GameStore>()(
+  import.meta.env.DEV
+    ? devtools(storeImpl, { name: "super-tic-tac-toe-store" })
+    : storeImpl
 );
 
-// Selector hooks for optimized re-renders
-export const useGameState = () => useGameStore((state) => state.gameState);
-export const useGameError = () => useGameStore((state) => state.error);
-export const useGameMoves = () => useGameStore((state) => state.moves);
-export const useCurrentScreen = () =>
-  useGameStore((state) => state.currentScreen);
-export const useGameMode = () => useGameStore((state) => state.gameMode);
-export const useConnectionStatus = () =>
-  useGameStore((state) => state.connectionStatus);
-export const usePlayerSymbol = () =>
-  useGameStore((state) => state.playerSymbol);
-export const useOpponentConnected = () =>
-  useGameStore((state) => state.opponentConnected);
-export const usePlayerId = () => useGameStore((state) => state.playerId);
-export const useOpponentNickname = () =>
-  useGameStore((state) => state.opponentNickname);
-export const usePlayerNickname = () =>
-  useGameStore((state) => state.playerNickname);
+// ─── Selector hooks (granular subscriptions to avoid unnecessary re-renders) ──
 
-// Individual action hooks to prevent re-render issues
-export const useStartNewGame = () =>
-  useGameStore((state) => state.startNewGame);
-export const useMakeMove = () => useGameStore((state) => state.makeMove);
-export const useResetCurrentGame = () =>
-  useGameStore((state) => state.resetCurrentGame);
-export const useClearError = () => useGameStore((state) => state.clearError);
-export const useSetGameMode = () => useGameStore((state) => state.setGameMode);
-export const useSetPlayerNickname = () =>
-  useGameStore((state) => state.setPlayerNickname);
-export const useFindOnlineGame = () =>
-  useGameStore((state) => state.findOnlineGame);
-export const useConnectToGame = () =>
-  useGameStore((state) => state.connectToGame);
-export const useDisconnectFromGame = () =>
-  useGameStore((state) => state.disconnectFromGame);
+export const useGameState = () => useGameStore((s) => s.gameState);
+export const useGameError = () => useGameStore((s) => s.error);
+export const useGameMoves = () => useGameStore((s) => s.moves);
+export const useCurrentScreen = () => useGameStore((s) => s.currentScreen);
+export const useGameMode = () => useGameStore((s) => s.gameMode);
+export const useConnectionStatus = () => useGameStore((s) => s.connectionStatus);
+export const usePlayerSymbol = () => useGameStore((s) => s.playerSymbol);
+export const useOpponentConnected = () => useGameStore((s) => s.opponentConnected);
+export const usePlayerId = () => useGameStore((s) => s.playerId);
+export const useOpponentNickname = () => useGameStore((s) => s.opponentNickname);
+export const usePlayerNickname = () => useGameStore((s) => s.playerNickname);
+
+export const useStartNewGame = () => useGameStore((s) => s.startNewGame);
+export const useMakeMove = () => useGameStore((s) => s.makeMove);
+export const useResetCurrentGame = () => useGameStore((s) => s.resetCurrentGame);
+export const useClearError = () => useGameStore((s) => s.clearError);
+export const useSetGameMode = () => useGameStore((s) => s.setGameMode);
+export const useSetPlayerNickname = () => useGameStore((s) => s.setPlayerNickname);
+export const useFindOnlineGame = () => useGameStore((s) => s.findOnlineGame);
+export const useConnectToGame = () => useGameStore((s) => s.connectToGame);
+export const useDisconnectFromGame = () => useGameStore((s) => s.disconnectFromGame);

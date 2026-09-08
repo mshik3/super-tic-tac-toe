@@ -51,14 +51,17 @@ export function isSubBoardFull(subBoard: SubBoard): boolean {
 /**
  * Check if the entire game is a draw
  * @param mainBoard - The main board to check
+ * @param subBoards - All 9 sub-boards (needed because drawn sub-boards leave null in mainBoard)
  * @returns True if all sub-boards are completed but no winner
  */
-export function isGameDraw(mainBoard: MainBoard): boolean {
-  // Game is a draw if all positions are filled (won or drawn) but no winner
-  const allPositionsFilled = mainBoard.every((cell) => cell !== null);
+export function isGameDraw(mainBoard: MainBoard, subBoards: SubBoard[]): boolean {
+  // Drawn sub-boards leave their main board slot as null, so we cannot use
+  // mainBoard.every(c => c !== null) — it would never detect a draw when any
+  // sub-board drew. Instead, check sub-board completion directly.
+  const allSubBoardsCompleted = subBoards.every(isSubBoardCompleted);
   const hasWinner = checkMainBoardWinner(mainBoard) !== null;
 
-  return allPositionsFilled && !hasWinner;
+  return allSubBoardsCompleted && !hasWinner;
 }
 
 /**

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { GameBoard } from "./GameBoard";
 import { Instructions } from "./Instructions";
 import { MoveLog } from "./MoveLog";
-import { ConnectionStatus } from "./ConnectionStatus";
 import {
   useGameState,
   useGameError,
@@ -32,7 +31,6 @@ export const GameScreen: React.FC = () => {
   const resetCurrentGame = useResetCurrentGame();
   const clearError = useClearError();
 
-  // Online multiplayer state
   const gameMode = useGameMode();
   const connectionStatus = useConnectionStatus();
   const playerSymbol = usePlayerSymbol();
@@ -42,223 +40,376 @@ export const GameScreen: React.FC = () => {
   const disconnectFromGame = useDisconnectFromGame();
   const findOnlineGame = useFindOnlineGame();
 
-  // Clear error after 3 seconds
   useEffect(() => {
     if (error) {
-      const timer = setTimeout(() => {
-        clearError();
-      }, 3000);
+      const timer = setTimeout(() => clearError(), 3000);
       return () => clearTimeout(timer);
     }
   }, [error, clearError]);
 
   if (!gameState) {
     return (
-      <div className="h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Starting new game...</p>
+      <div
+        className="h-screen flex items-center justify-center"
+        style={{ backgroundColor: "var(--bg)" }}
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
+            style={{ borderColor: "var(--x)" }}
+          />
+          <p
+            className="text-sm font-medium tracking-widest uppercase"
+            style={{ color: "var(--text-dim)" }}
+          >
+            Loading…
+          </p>
         </div>
       </div>
     );
   }
 
+  const isOnline = gameMode === "online";
+  const isMyTurn =
+    !isOnline ||
+    (gameState.status === "playing" &&
+      gameState.currentPlayer === playerSymbol);
+
+  const xName = isOnline
+    ? playerSymbol === "X"
+      ? playerNickname ?? "You"
+      : opponentNickname ?? "Opponent"
+    : "Player X";
+
+  const oName = isOnline
+    ? playerSymbol === "O"
+      ? playerNickname ?? "You"
+      : opponentNickname ?? "Opponent"
+    : "Player O";
+
+  const xIsMe = isOnline && playerSymbol === "X";
+  const oIsMe = isOnline && playerSymbol === "O";
+
   const handleDisconnect = () => {
-    if (gameMode === "online") {
-      disconnectFromGame();
-    } else {
-      resetCurrentGame();
-    }
+    if (isOnline) disconnectFromGame();
+    else resetCurrentGame();
   };
 
   const handleNewGame = () => {
-    if (gameMode === "online") {
-      // For online games, disconnect and find a new match
+    if (isOnline) {
       disconnectFromGame();
-      // Small delay to ensure cleanup, then find new game
-      setTimeout(() => {
-        findOnlineGame();
-      }, 100);
+      setTimeout(() => findOnlineGame(), 100);
     } else {
-      // For local games, just reset the current game
       resetCurrentGame();
     }
   };
 
+  const isFinished = gameState.status === "finished";
+  const winner = gameState.winner;
+
+  const winnerName =
+    winner === "draw"
+      ? null
+      : winner === "X"
+        ? xName
+        : oName;
+
+  const iWon =
+    isOnline && winner !== "draw" && winner !== null && winner === playerSymbol;
+  const iLost =
+    isOnline && winner !== "draw" && winner !== null && winner !== playerSymbol;
+
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-2 md:py-4">
-        {/* Mobile header row */}
-        <div className="flex items-center justify-between md:hidden">
-          <div className="flex items-center">
-            <button
-              aria-label="Open menu"
-              onClick={() => setIsMenuOpen(true)}
-              className="p-2 -ml-2 text-gray-700 hover:text-gray-900"
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ backgroundColor: "var(--bg)" }}
+    >
+      {/* ── Top Player HUD ─────────────────────────────────── */}
+      <div
+        className="shrink-0 border-b"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+      >
+        {/* Player vs Player bar */}
+        <div className="flex items-stretch">
+          {/* X player card */}
+          <PlayerCard
+            symbol="X"
+            name={xName}
+            isActive={gameState.status === "playing" && gameState.currentPlayer === "X"}
+            isMe={xIsMe}
+            isOnline={isOnline}
+            connected={xIsMe ? connectionStatus === "connected" : opponentConnected}
+            side="left"
+          />
+
+          {/* VS divider */}
+          <div
+            className="flex flex-col items-center justify-center px-3 md:px-6 shrink-0"
+            style={{ backgroundColor: "var(--bg)" }}
+          >
+            <span
+              className="text-xs font-bold tracking-widest"
+              style={{ color: "var(--text-dim)" }}
             >
-              ☰
-            </button>
+              VS
+            </span>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">
-            {gameMode === "online" && playerSymbol
-              ? `${playerNickname || "You"} (${playerSymbol}) vs ${
-                  opponentNickname || "Opponent"
-                }`
-              : `Super Tic-Tac-Toe`}
-          </h1>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleNewGame}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-            >
-              {gameMode === "online" ? "New Match" : "New Game"}
-            </button>
-          </div>
+
+          {/* O player card */}
+          <PlayerCard
+            symbol="O"
+            name={oName}
+            isActive={gameState.status === "playing" && gameState.currentPlayer === "O"}
+            isMe={oIsMe}
+            isOnline={isOnline}
+            connected={oIsMe ? connectionStatus === "connected" : opponentConnected}
+            side="right"
+          />
         </div>
 
-        {/* Desktop header title */}
-        <div className="hidden md:block">
-          <h1 className="text-2xl font-bold text-gray-900 text-center">
-            {gameMode === "online" && playerSymbol
-              ? `${playerNickname || "You"} (${playerSymbol}) vs ${
-                  opponentNickname || "Opponent"
-                }`
-              : `Super Tic-Tac-Toe`}
-          </h1>
-        </div>
-
-        {/* Error display */}
+        {/* Error banner */}
         {error && (
-          <div className="mt-2 bg-red-50 border border-red-200 rounded p-2 text-center">
-            <p className="text-red-800 text-sm font-medium">{error}</p>
-          </div>
-        )}
-
-        {/* Mobile inline status */}
-        {gameMode === "online" && (
-          <div className="md:hidden mt-2 flex items-center justify-between text-sm text-gray-700">
-            <div className="flex items-center space-x-2">
-              <span>
-                {connectionStatus === "connected"
-                  ? "🟢 Connected"
-                  : connectionStatus === "connecting"
-                  ? "🟡 Connecting..."
-                  : connectionStatus === "error"
-                  ? "🔴 Error"
-                  : "⚪ Disconnected"}
-              </span>
-              {playerSymbol && (
-                <span className="flex items-center space-x-1">
-                  <span>You:</span>
-                  <span className="font-bold">{playerSymbol}</span>
-                </span>
-              )}
-            </div>
-            <div className="flex items-center space-x-1">
-              <span>
-                {playerNickname || "You"}
-                {playerSymbol ? ` (${playerSymbol})` : ""}
-                {" vs "}
-                {opponentNickname || "Opponent"}
-              </span>
-              <span
-                className={
-                  opponentConnected ? "text-green-600" : "text-red-600"
-                }
-              >
-                {opponentConnected ? "🟢 Online" : "🔴 Offline"}
-              </span>
-            </div>
+          <div
+            className="px-4 py-2 text-center text-sm font-medium"
+            style={{
+              backgroundColor: "rgba(248, 113, 113, 0.1)",
+              borderTop: "1px solid rgba(248, 113, 113, 0.3)",
+              color: "var(--o)",
+            }}
+          >
+            {error}
           </div>
         )}
       </div>
 
-      {/* Connection Status for Online Games (desktop) */}
-      {gameMode === "online" && (
-        <div className="hidden md:block">
-          <ConnectionStatus
-            status={connectionStatus}
-            opponentConnected={opponentConnected}
-            playerSymbol={playerSymbol}
-            playerNickname={playerNickname}
-            opponentNickname={opponentNickname}
-          />
+      {/* ── Game Over Banner ───────────────────────────────── */}
+      {isFinished && (
+        <div
+          className="shrink-0 py-3 px-4 text-center animate-slide-up border-b"
+          style={{
+            backgroundColor:
+              winner === "draw"
+                ? "rgba(77, 96, 128, 0.15)"
+                : winner === "X"
+                  ? "rgba(34, 211, 238, 0.1)"
+                  : "rgba(248, 113, 113, 0.1)",
+            borderColor:
+              winner === "draw"
+                ? "var(--border)"
+                : winner === "X"
+                  ? "rgba(34, 211, 238, 0.35)"
+                  : "rgba(248, 113, 113, 0.35)",
+          }}
+        >
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            <div>
+              {winner === "draw" ? (
+                <span
+                  className="text-lg md:text-xl font-bold tracking-wide"
+                  style={{ color: "var(--text)" }}
+                >
+                  DRAW
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-2xl md:text-3xl font-bold"
+                    style={{
+                      color: winner === "X" ? "var(--x)" : "var(--o)",
+                      textShadow:
+                        winner === "X"
+                          ? "0 0 20px rgba(0,204,255,0.5)"
+                          : "0 0 20px rgba(255,68,68,0.5)",
+                    }}
+                  >
+                    {winner}
+                  </span>
+                  <span
+                    className="text-lg md:text-xl font-bold tracking-wide"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {isOnline
+                      ? iWon
+                        ? "YOU WIN"
+                        : iLost
+                          ? "YOU LOSE"
+                          : `${winnerName} WINS`
+                      : `${winnerName} WINS`}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleNewGame}
+                className="px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80"
+                style={{
+                  backgroundColor: isOnline
+                    ? "var(--x)"
+                    : "var(--surface-2)",
+                  color: isOnline ? "var(--bg)" : "var(--text)",
+                  border: "1px solid var(--border-2)",
+                }}
+              >
+                {isOnline ? "Find Match" : "Play Again"}
+              </button>
+
+              {isOnline && (
+                <button
+                  onClick={disconnectFromGame}
+                  className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
+                  style={{
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text-dim)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  Menu
+                </button>
+              )}
+
+              {!isOnline && gameState.status === "finished" && (
+                <button
+                  onClick={startNewGame}
+                  className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
+                  style={{
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text-dim)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  New Game
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Main game area */}
+      {/* ── Main content ───────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - Instructions (desktop only) */}
-        <div className="hidden md:block w-80 bg-white border-r border-gray-200">
+        {/* Left — Instructions (desktop) */}
+        <div
+          className="hidden md:block w-72 border-r shrink-0 overflow-y-auto"
+          style={{ borderColor: "var(--border)" }}
+        >
           <Instructions onNewGame={handleNewGame} />
         </div>
 
-        {/* Center - Game board */}
-        <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-y-auto">
-          <div className="flex flex-col items-center space-y-4 md:space-y-6 w-full">
-            <GameBoard gameState={gameState} onMove={makeMove} />
+        {/* Center — Board */}
+        <div className="flex-1 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="flex flex-col items-center gap-3 w-full">
+            <GameBoard
+              gameState={gameState}
+              onMove={makeMove}
+              disabled={!isMyTurn || isFinished}
+              currentPlayer={gameState.currentPlayer}
+            />
 
-            {/* Game controls (desktop only) */}
-            <div className="hidden md:flex space-x-4">
+            {/* Mobile controls */}
+            <div className="flex md:hidden items-center gap-2 mt-1">
+              <button
+                onClick={() => setIsMenuOpen(true)}
+                className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
+                style={{
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text-dim)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                Rules
+              </button>
               <button
                 onClick={handleNewGame}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                className="px-3 py-1.5 rounded text-xs font-bold tracking-wide uppercase"
+                style={{
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border-2)",
+                }}
               >
-                {gameMode === "online" ? "Find New Match" : "New Game"}
+                {isOnline ? "New Match" : "New Game"}
               </button>
-
-              {gameMode === "online" && (
+              {isOnline && (
                 <button
                   onClick={handleDisconnect}
-                  className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+                  className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
+                  style={{
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text-dim)",
+                    border: "1px solid var(--border)",
+                  }}
                 >
-                  Leave Game
-                </button>
-              )}
-
-              {gameState.status === "finished" && gameMode === "local" && (
-                <button
-                  onClick={startNewGame}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Play Again
-                </button>
-              )}
-
-              {gameState.status === "finished" && gameMode === "online" && (
-                <button
-                  onClick={disconnectFromGame}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Back to Menu
+                  Leave
                 </button>
               )}
             </div>
 
-            {/* Move log under board (mobile only) */}
-            <div className="w-full md:hidden bg-white rounded-lg shadow border border-gray-200">
+            {/* Mobile — move log */}
+            <div
+              className="w-full md:hidden rounded border"
+              style={{ borderColor: "var(--border)" }}
+            >
               <MoveLog
                 moves={moves}
                 currentPlayer={gameState.currentPlayer}
                 isGameActive={gameState.status === "playing"}
                 variant="compact"
                 order="desc"
-                heightClass="h-64"
+                heightClass="h-48"
                 autoScroll={false}
               />
             </div>
           </div>
         </div>
 
-        {/* Right sidebar - Move log (desktop only) */}
-        <div className="hidden md:block w-80 bg-white border-l border-gray-200">
+        {/* Right — Move log (desktop) */}
+        <div
+          className="hidden md:flex w-72 border-l shrink-0 flex-col"
+          style={{ borderColor: "var(--border)" }}
+        >
           <MoveLog
             moves={moves}
             currentPlayer={gameState.currentPlayer}
             isGameActive={gameState.status === "playing"}
             order="asc"
           />
+
+          {/* Desktop action buttons */}
+          <div
+            className="p-4 border-t space-y-2"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <button
+              onClick={handleNewGame}
+              className="w-full py-2 rounded font-bold text-sm tracking-widest uppercase transition-opacity hover:opacity-80"
+              style={{
+                backgroundColor: "rgba(0,204,255,0.12)",
+                color: "var(--x)",
+                border: "1px solid rgba(0,204,255,0.3)",
+              }}
+            >
+              {isOnline ? "Find New Match" : "New Game"}
+            </button>
+
+            {isOnline && (
+              <button
+                onClick={handleDisconnect}
+                className="w-full py-2 rounded font-semibold text-sm tracking-wide uppercase transition-opacity hover:opacity-70"
+                style={{
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text-dim)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                Leave Game
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -266,10 +417,14 @@ export const GameScreen: React.FC = () => {
       {isMenuOpen && (
         <div className="md:hidden fixed inset-0 z-50">
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0"
+            style={{ backgroundColor: "rgba(8,12,20,0.7)" }}
             onClick={() => setIsMenuOpen(false)}
           />
-          <div className="absolute inset-y-0 left-0 w-80 max-w-[85vw] bg-white shadow-xl transform transition-transform duration-200 ease-out">
+          <div
+            className="absolute inset-y-0 left-0 w-80 max-w-[85vw] shadow-2xl"
+            style={{ backgroundColor: "var(--surface)" }}
+          >
             <Instructions
               onNewGame={handleNewGame}
               showHeaderClose
@@ -278,6 +433,106 @@ export const GameScreen: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Player Card Component ─────────────────────────────────────
+
+interface PlayerCardProps {
+  symbol: "X" | "O";
+  name: string;
+  isActive: boolean;
+  isMe: boolean;
+  isOnline: boolean;
+  connected: boolean | undefined;
+  side: "left" | "right";
+}
+
+const PlayerCard: React.FC<PlayerCardProps> = ({
+  symbol,
+  name,
+  isActive,
+  isMe,
+  isOnline,
+  connected,
+  side,
+}) => {
+  const isX = symbol === "X";
+  const color = isX ? "var(--x)" : "var(--o)";
+  const dimColor = isX
+    ? "rgba(34, 211, 238, 0.07)"
+    : "rgba(248, 113, 113, 0.07)";
+  const activeColor = isX
+    ? "rgba(34, 211, 238, 0.13)"
+    : "rgba(248, 113, 113, 0.13)";
+  const borderActive = isX
+    ? "rgba(34, 211, 238, 0.45)"
+    : "rgba(248, 113, 113, 0.45)";
+
+  return (
+    <div
+      className={`flex-1 flex items-center gap-3 px-3 md:px-5 py-2.5 transition-all duration-300 ${side === "right" ? "flex-row-reverse" : ""}`}
+      style={{
+        backgroundColor: isActive ? activeColor : dimColor,
+        borderBottom: isActive ? `2px solid ${borderActive}` : "2px solid transparent",
+      }}
+    >
+      {/* Symbol badge */}
+      <div
+        className="shrink-0 w-9 h-9 md:w-10 md:h-10 rounded flex items-center justify-center font-bold text-xl select-none"
+        style={{
+          backgroundColor: isActive ? `${color}22` : "var(--surface-2)",
+          color: isActive ? color : "var(--text-dim)",
+          border: `1px solid ${isActive ? `${color}55` : "var(--border)"}`,
+          boxShadow: isActive ? `0 0 12px ${isX ? "rgba(34,211,238,0.25)" : "rgba(248,113,113,0.25)"}` : "none",
+        }}
+      >
+        {symbol}
+      </div>
+
+      {/* Name + status */}
+      <div className={`min-w-0 flex flex-col ${side === "right" ? "items-end" : "items-start"}`}>
+        <div className="flex items-center gap-1.5">
+          {/* Online connection dot */}
+          {isOnline && (
+            <div
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{
+                backgroundColor:
+                  connected === true
+                    ? "#22c55e"
+                    : connected === false
+                      ? "#ef4444"
+                      : "var(--text-dim)",
+              }}
+            />
+          )}
+          <span
+            className="font-bold text-sm md:text-base tracking-wide truncate max-w-[100px] md:max-w-[160px]"
+            style={{ color: isActive ? "var(--text)" : "var(--text-dim)" }}
+          >
+            {name}
+          </span>
+          {isMe && isOnline && (
+            <span
+              className="text-xs font-semibold tracking-wider uppercase"
+              style={{ color: "var(--text-dim)", fontSize: "0.6rem" }}
+            >
+              you
+            </span>
+          )}
+        </div>
+
+        {isActive && (
+          <span
+            className="text-xs font-bold tracking-widest uppercase animate-blink"
+            style={{ color, fontSize: "0.6rem" }}
+          >
+            ▸ Your Turn
+          </span>
+        )}
+      </div>
     </div>
   );
 };

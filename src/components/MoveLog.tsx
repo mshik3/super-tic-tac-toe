@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { clsx } from "clsx";
 import type { GameMove } from "../utils/chessNotation";
 import type { PlayerSymbol } from "../types/game";
 
@@ -8,10 +7,10 @@ interface MoveLogProps {
   currentPlayer: PlayerSymbol;
   isGameActive: boolean;
   variant?: "default" | "compact";
-  order?: "asc" | "desc"; // ascending = oldest first, descending = newest first
-  maxHeightClass?: string; // optional Tailwind class for max-height of scroll area
-  heightClass?: string; // optional fixed height class for scroll area
-  autoScroll?: boolean; // whether to auto-scroll when new moves arrive
+  order?: "asc" | "desc";
+  maxHeightClass?: string;
+  heightClass?: string;
+  autoScroll?: boolean;
 }
 
 export const MoveLog: React.FC<MoveLogProps> = React.memo(
@@ -26,8 +25,8 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
     autoScroll = false,
   }) => {
     const moveListRef = useRef<HTMLDivElement>(null);
+    const isCompact = variant === "compact";
 
-    // Optional auto-scroll when new moves are added
     useEffect(() => {
       if (!autoScroll || !moveListRef.current) return;
       if (order === "asc") {
@@ -37,122 +36,102 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
       }
     }, [moves, order, autoScroll]);
 
-    const isCompact = variant === "compact";
+    const orderedMoves = order === "desc" ? [...moves].reverse() : moves;
 
     return (
-      <div className={clsx("flex flex-col h-full", isCompact && "text-xs")}>
+      <div
+        className="flex flex-col h-full"
+        style={{ backgroundColor: "var(--surface)" }}
+      >
         {/* Header */}
         <div
-          className={clsx(
-            "border-b border-gray-200 transition-colors duration-300",
-            {
-              "bg-blue-50": isGameActive && currentPlayer === "X",
-              "bg-red-50": isGameActive && currentPlayer === "O",
-              "bg-gray-50": !isGameActive,
-            }
-          )}
+          className="flex items-center justify-between px-4 py-3 border-b"
+          style={{ borderColor: "var(--border)" }}
         >
-          <div
-            className={clsx(
-              "flex items-center justify-between",
-              isCompact ? "p-2" : "p-4"
-            )}
+          <span
+            className="text-xs font-bold tracking-widest uppercase"
+            style={{ color: "var(--text-dim)" }}
           >
-            <h3
-              className={clsx(
-                "font-semibold text-gray-900",
-                isCompact ? "text-base" : "text-lg"
-              )}
+            Move Log
+          </span>
+          {isGameActive && (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-xs font-bold tracking-wider uppercase animate-blink"
+                style={{ color: currentPlayer === "X" ? "var(--x)" : "var(--o)" }}
+              >
+                {currentPlayer}
+              </span>
+              <span
+                className="text-xs font-medium"
+                style={{ color: "var(--text-dim)" }}
+              >
+                to move
+              </span>
+            </div>
+          )}
+          {!isGameActive && (
+            <span
+              className="text-xs font-medium tracking-wider uppercase"
+              style={{ color: "var(--text-dim)" }}
             >
-              Move Log
-            </h3>
-            {isGameActive && (
-              <p
-                className={clsx(
-                  isCompact ? "text-xs" : "text-sm",
-                  "font-medium",
-                  {
-                    "text-blue-700": currentPlayer === "X",
-                    "text-red-700": currentPlayer === "O",
-                  }
-                )}
-              >
-                {currentPlayer}'s Turn
-              </p>
-            )}
-            {!isGameActive && (
-              <p
-                className={clsx(
-                  isCompact ? "text-xs" : "text-sm",
-                  "text-gray-500"
-                )}
-              >
-                Game Over
-              </p>
-            )}
-          </div>
+              Game Over
+            </span>
+          )}
         </div>
 
         {/* Move list */}
         <div
           ref={moveListRef}
-          className={clsx(
-            "overflow-y-auto",
-            isCompact ? "p-2" : "p-3",
-            heightClass ?? maxHeightClass ?? ""
-          )}
+          className={`overflow-y-auto flex-1 ${isCompact ? "p-2" : "p-2"} ${heightClass ?? maxHeightClass ?? ""}`}
         >
           {moves.length === 0 ? (
-            <div
-              className={clsx(
-                "text-center text-gray-500",
-                isCompact ? "py-6" : "py-8"
-              )}
-            >
-              <p className={clsx(isCompact ? "text-xs" : "text-sm")}>
+            <div className="flex flex-col items-center justify-center h-full py-8 gap-2">
+              <div
+                className="text-3xl font-bold opacity-10 select-none"
+                style={{ color: "var(--text)" }}
+              >
+                —
+              </div>
+              <p
+                className="text-xs font-medium tracking-wide text-center"
+                style={{ color: "var(--text-dim)" }}
+              >
                 No moves yet
-              </p>
-              <p className="text-xs mt-1">
-                Game will start when X makes the first move
               </p>
             </div>
           ) : (
-            <div className="space-y-1">
-              {(order === "desc" ? [...moves].reverse() : moves).map((move) => (
+            <div className="space-y-0.5">
+              {orderedMoves.map((move) => (
                 <div
                   key={`${move.moveNumber}-${move.player}`}
-                  className={clsx("flex items-center justify-between rounded", {
-                    "bg-blue-100 text-blue-900": move.player === "X",
-                    "bg-red-100 text-red-900": move.player === "O",
-                  })}
+                  className="flex items-center justify-between rounded px-2 py-1.5"
+                  style={{
+                    backgroundColor:
+                      move.player === "X"
+                        ? "rgba(0, 204, 255, 0.06)"
+                        : "rgba(255, 68, 68, 0.06)",
+                  }}
                 >
-                  <div
-                    className={clsx(
-                      "flex items-center space-x-2",
-                      isCompact ? "p-1" : "p-2"
-                    )}
-                  >
-                    <span className="font-mono font-bold text-xs bg-white px-1.5 py-0.5 rounded">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="font-mono text-xs w-5 text-right"
+                      style={{ color: "var(--text-dim)" }}
+                    >
                       {move.moveNumber}
                     </span>
                     <span
-                      className={clsx(
-                        "font-bold",
-                        isCompact ? "text-base" : "text-lg",
-                        {
-                          "text-blue-700": move.player === "X",
-                          "text-red-700": move.player === "O",
-                        }
-                      )}
+                      className="font-bold text-sm w-4"
+                      style={{
+                        color: move.player === "X" ? "var(--x)" : "var(--o)",
+                      }}
                     >
                       {move.player}
                     </span>
                   </div>
                   <span
-                    className={clsx(
-                      "font-mono font-semibold",
-                      isCompact ? "text-sm pr-2" : "text-base pr-3"
-                    )}
+                    className="font-mono text-sm font-semibold"
+                    style={{ color: "var(--text)" }}
                   >
                     {move.notation}
                   </span>
@@ -164,25 +143,20 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
 
         {/* Notation guide */}
         <div
-          className={clsx(
-            "border-t border-gray-200",
-            isCompact ? "p-2" : "p-3"
-          )}
+          className="border-t px-3 py-2"
+          style={{ borderColor: "var(--border)" }}
         >
-          <details className="text-xs text-gray-600">
-            <summary className="cursor-pointer font-medium hover:text-gray-800">
+          <details className="text-xs" style={{ color: "var(--text-dim)" }}>
+            <summary
+              className="cursor-pointer font-semibold tracking-wide uppercase hover:opacity-80 text-xs"
+              style={{ fontSize: "0.65rem" }}
+            >
               Notation Guide
             </summary>
-            <div className="mt-2 space-y-1 text-xs">
-              <div>
-                <strong>Boards:</strong> UL, U, UR, L, M, R, LL, Lo, LR
-              </div>
-              <div>
-                <strong>Cells:</strong> ul, u, ur, l, m, r, ll, lo, lr
-              </div>
-              <div>
-                <strong>Example:</strong> "Rm" = Right board, middle cell
-              </div>
+            <div className="mt-2 space-y-1 font-mono text-xs leading-relaxed">
+              <div>Boards: UL U UR / L M R / LL Lo LR</div>
+              <div>Cells: ul u ur / l m r / ll lo lr</div>
+              <div style={{ color: "var(--text)" }}>e.g. "Rm" = Right, middle</div>
             </div>
           </details>
         </div>

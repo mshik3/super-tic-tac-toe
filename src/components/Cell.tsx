@@ -1,15 +1,13 @@
 import React from "react";
-import type { Cell as CellType } from "../types/game";
+import type { Cell as CellType, PlayerSymbol } from "../types/game";
 import { clsx } from "clsx";
 
 interface CellProps {
   value: CellType;
   onClick: () => void;
   isValidMove: boolean;
-  isHovered: boolean;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
   disabled?: boolean;
+  currentPlayer?: PlayerSymbol;
 }
 
 export const Cell: React.FC<CellProps> = React.memo(
@@ -17,10 +15,8 @@ export const Cell: React.FC<CellProps> = React.memo(
     value,
     onClick,
     isValidMove,
-    isHovered,
-    onMouseEnter,
-    onMouseLeave,
     disabled = false,
+    currentPlayer,
   }) => {
     const handleClick = () => {
       if (!disabled && isValidMove) {
@@ -28,35 +24,27 @@ export const Cell: React.FC<CellProps> = React.memo(
       }
     };
 
+    const canPlay = isValidMove && !value && !disabled;
+
     return (
       <button
         className={clsx("game-cell", {
           occupied: value !== null,
           x: value === "X",
           o: value === "O",
-          "hover:bg-blue-50 border-blue-300":
-            isValidMove && !value && isHovered,
-          "hover:bg-gray-100": isValidMove && !value && !isHovered,
-          "cursor-not-allowed opacity-50": disabled || !isValidMove,
-          "cursor-pointer": isValidMove && !disabled,
-          "bg-green-50 border-green-300": isValidMove && !value && !disabled,
+          "x-valid": canPlay && currentPlayer === "X",
+          "o-valid": canPlay && currentPlayer === "O",
+          "opacity-25": disabled && !value,
+          "cursor-pointer": canPlay,
+          "cursor-not-allowed": !canPlay && !value,
         })}
         onClick={handleClick}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
         disabled={disabled || !isValidMove}
         type="button"
         aria-label={`Cell ${value ? `occupied by ${value}` : "empty"}`}
       >
         {value && (
-          <span
-            className={clsx("font-bold text-2xl", {
-              "text-blue-600": value === "X",
-              "text-red-600": value === "O",
-            })}
-          >
-            {value}
-          </span>
+          <span className="font-bold leading-none select-none">{value}</span>
         )}
       </button>
     );

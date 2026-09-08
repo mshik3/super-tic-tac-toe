@@ -9,101 +9,127 @@ interface InstructionsProps {
 export const Instructions: React.FC<InstructionsProps> = React.memo(
   ({ onNewGame, showHeaderClose, onClose }) => {
     return (
-      <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">How to Play</h3>
+      <div
+        className="h-full flex flex-col"
+        style={{ backgroundColor: "var(--surface)" }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 py-3 border-b"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <span
+            className="text-xs font-bold tracking-widest uppercase"
+            style={{ color: "var(--text-dim)" }}
+          >
+            How to Play
+          </span>
           {showHeaderClose && (
             <button
               aria-label="Close"
               onClick={onClose}
-              className="ml-2 text-gray-600 hover:text-gray-800"
+              className="text-sm font-medium hover:opacity-70 transition-opacity"
+              style={{ color: "var(--text-dim)" }}
             >
               ✕
             </button>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-gray-700">
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Basic Rules</h4>
-            <ul className="space-y-1 text-xs">
-              <li className="flex items-start">
-                <span className="text-blue-600 mr-2 mt-0.5">•</span>
-                <span>9 smaller tic-tac-toe boards in a 3×3 grid</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-blue-600 mr-2 mt-0.5">•</span>
-                <span>Win 3 smaller boards in a row to win the game</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-blue-600 mr-2 mt-0.5">•</span>
-                <span>Your move determines opponent's next board</span>
-              </li>
-            </ul>
-          </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+          <Section title="Objective">
+            <Rule>Win 3 sub-boards in a row (horizontal, vertical, or diagonal)</Rule>
+            <Rule>Win a sub-board by getting 3 in a row inside it</Rule>
+          </Section>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Strategy</h4>
-            <ul className="space-y-1 text-xs">
-              <li className="flex items-start">
-                <span className="text-green-600 mr-2 mt-0.5">•</span>
-                <span>Control where your opponent plays next</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-green-600 mr-2 mt-0.5">•</span>
-                <span>Force opponent into completed boards</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-green-600 mr-2 mt-0.5">•</span>
-                <span>Think multiple moves ahead</span>
-              </li>
-            </ul>
-          </div>
+          <Section title="The Twist">
+            <Rule>Your move sends the opponent to that cell's matching board</Rule>
+            <Rule>If sent to a completed board, you can play anywhere</Rule>
+          </Section>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Board Layout</h4>
-            <div className="grid grid-cols-3 gap-1 text-xs font-mono bg-gray-100 p-2 rounded">
-              <div className="bg-white p-1 text-center">UL</div>
-              <div className="bg-white p-1 text-center">U</div>
-              <div className="bg-white p-1 text-center">UR</div>
-              <div className="bg-white p-1 text-center">L</div>
-              <div className="bg-white p-1 text-center">M</div>
-              <div className="bg-white p-1 text-center">R</div>
-              <div className="bg-white p-1 text-center">LL</div>
-              <div className="bg-white p-1 text-center">Lo</div>
-              <div className="bg-white p-1 text-center">LR</div>
+          <Section title="Strategy">
+            <Rule>Control where your opponent must play</Rule>
+            <Rule>Force them into completed or bad boards</Rule>
+            <Rule>Think 2–3 moves ahead</Rule>
+          </Section>
+
+          <Section title="Board Map">
+            <div
+              className="grid grid-cols-3 gap-1 text-xs font-mono rounded p-2 mt-1"
+              style={{ backgroundColor: "var(--surface-2)" }}
+            >
+              {["UL", "U", "UR", "L", "M", "R", "LL", "Lo", "LR"].map((label) => (
+                <div
+                  key={label}
+                  className="text-center py-1 rounded text-xs font-semibold"
+                  style={{
+                    backgroundColor: "var(--bg)",
+                    color: "var(--text-dim)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {label}
+                </div>
+              ))}
             </div>
-            <p className="text-xs text-gray-600">
-              Each board has the same layout for individual cells
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Special Cases</h4>
-            <ul className="space-y-1 text-xs">
-              <li className="flex items-start">
-                <span className="text-orange-600 mr-2 mt-0.5">•</span>
-                <span>Sent to completed board? Play anywhere!</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-orange-600 mr-2 mt-0.5">•</span>
-                <span>First move can be on any board</span>
-              </li>
-            </ul>
-          </div>
+          </Section>
         </div>
 
-        <div className="border-t border-gray-200 p-4">
-          <div className="flex space-x-2">
-            <button
-              onClick={onNewGame}
-              className="flex-1 px-3 py-2 text-xs bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
-            >
-              New Game
-            </button>
-          </div>
+        {/* Footer */}
+        <div
+          className="border-t p-4"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <button
+            onClick={onNewGame}
+            className="w-full py-2 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-80"
+            style={{
+              backgroundColor: "var(--surface-2)",
+              color: "var(--text-dim)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            New Game
+          </button>
         </div>
       </div>
     );
   }
 );
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <h4
+        className="text-xs font-bold tracking-widest uppercase"
+        style={{ color: "var(--text-dim)" }}
+      >
+        {title}
+      </h4>
+      <ul className="space-y-1">{children}</ul>
+    </div>
+  );
+}
+
+function Rule({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span
+        className="mt-0.5 shrink-0 font-bold"
+        style={{ color: "var(--x)", fontSize: "0.6rem" }}
+      >
+        ▸
+      </span>
+      <span className="text-xs leading-relaxed" style={{ color: "var(--text)" }}>
+        {children}
+      </span>
+    </li>
+  );
+}
