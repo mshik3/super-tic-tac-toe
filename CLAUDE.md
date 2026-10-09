@@ -29,9 +29,8 @@ npm run deploy           # deploy to Cloudflare
 ## Key Decisions
 - Durable Objects over database — <5ms latency, geographic co-location of players
 - HTTP polling for matchmaking (stateless), WebSocket for gameplay (stateful)
-- Game engine duplicated in `src/lib/` and `worker/src/lib/` (shared package adds build complexity)
+- Worker imports the game engine and protocol types straight from `src/` by relative path (wrangler bundles them); no shared package
 
 ## Known Limitations
 - No rematch flow — players must find new match after game ends
 - Disconnect banner says 60s but shows no live countdown (the turn clock is live)
-- Games are created as `playing`, not `waiting` — the `waiting` branches in `GameSession` never run

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
-  getNicknameRuleHint,
+  NICKNAME_RULE_HINT,
   loadSavedNickname,
   validateNickname,
 } from "../utils/nickname";
@@ -152,7 +152,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 className="mt-1.5 text-xs"
                 style={{ color: "var(--text-dim)" }}
               >
-                {getNicknameRuleHint()}
+                {NICKNAME_RULE_HINT}
               </p>
             )}
           </div>

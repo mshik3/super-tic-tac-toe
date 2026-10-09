@@ -47,39 +47,17 @@ function normalizeWhitespace(input: string): string {
   return input.replace(/\s+/g, " ").trim();
 }
 
-// Strip non-ASCII characters (display names restricted to ASCII A–Z, a–z, 0–9, space)
-function stripNonAscii(input: string): string {
-  // Remove any non-ASCII characters using Unicode property escapes
-  return input.replace(/[^\p{ASCII}]/gu, "");
-}
-
-// Remove all non alphanumeric/space characters
-function removeSymbols(input: string): string {
-  return input.replace(/[^A-Za-z0-9 ]/g, "");
-}
-
-// Convert to a form suitable for profanity detection: lowercase, remove spaces, map leet
+// Lowercase, remove spaces, map leet, so disguised profanities still match
 function normalizeForProfanity(input: string): string {
-  const lower = input.toLowerCase();
-  const noSpaces = lower.replace(/\s+/g, "");
-  let mapped = "";
-  for (const ch of noSpaces) {
-    mapped += LEET_MAP[ch] ?? ch;
-  }
-  return mapped;
+  return [...input.toLowerCase().replace(/\s+/g, "")]
+    .map((ch) => LEET_MAP[ch] ?? ch)
+    .join("");
 }
 
+// Display names are ASCII letters, digits and spaces only
 export function sanitizeNickname(rawInput: string | null | undefined): string {
-  const base = (rawInput ?? "").toString();
-  // Step 1: Trim + collapse spaces
-  let sanitized = normalizeWhitespace(base);
-  // Step 2: Strip non-ASCII
-  sanitized = stripNonAscii(sanitized);
-  // Step 3: Remove symbols, keep letters, digits, spaces
-  sanitized = removeSymbols(sanitized);
-  // Step 4: Collapse spaces again after stripping
-  sanitized = normalizeWhitespace(sanitized);
-  return sanitized;
+  const spaced = normalizeWhitespace(rawInput ?? "");
+  return normalizeWhitespace(spaced.replace(/[^A-Za-z0-9 ]/g, ""));
 }
 
 export function validateNickname(rawInput: string | null | undefined): {
@@ -89,47 +67,29 @@ export function validateNickname(rawInput: string | null | undefined): {
 } {
   const errors: string[] = [];
   const sanitized = sanitizeNickname(rawInput);
-  const raw = (rawInput ?? "").toString();
-  const rawWhitespaceNormalized = normalizeWhitespace(raw);
 
   if (!sanitized) {
     errors.push("Display name is required.");
   }
 
-  // Enforce allowed characters: letters, digits, spaces only (check RAW input too)
-  // If the user typed any disallowed characters (symbols/emojis/non-ASCII), reject.
-  if (rawWhitespaceNormalized) {
-    const containsNonAscii = /[^\p{ASCII}]/u.test(rawWhitespaceNormalized);
-    const containsSymbols = /[^A-Za-z0-9 ]/.test(rawWhitespaceNormalized);
-    if (containsNonAscii || containsSymbols) {
-      errors.push("Only letters, numbers, and spaces are allowed.");
-    }
+  // Reject rather than silently strip symbols, emoji and non-ASCII
+  if (/[^A-Za-z0-9\s]/.test(rawInput ?? "")) {
+    errors.push("Only letters, numbers, and spaces are allowed.");
   }
 
-  // Length constraints after sanitization
   if (sanitized.length < 3 || sanitized.length > 20) {
     errors.push("Must be 3–20 characters long.");
   }
 
-  // Profanity check
   const normalized = normalizeForProfanity(sanitized);
-  for (const bad of PROFANITY_BLOCKLIST) {
-    if (normalized.includes(bad)) {
-      errors.push("Please choose a different, family-friendly display name.");
-      break;
-    }
+  if (PROFANITY_BLOCKLIST.some((bad) => normalized.includes(bad))) {
+    errors.push("Please choose a different, family-friendly display name.");
   }
 
-  return {
-    isValid: errors.length === 0,
-    sanitized,
-    errors,
-  };
+  return { isValid: errors.length === 0, sanitized, errors };
 }
 
-export function getNicknameRuleHint(): string {
-  return "3–20 chars; letters, numbers, and spaces only.";
-}
+export const NICKNAME_RULE_HINT = "3–20 chars; letters, numbers, and spaces only.";
 
 const NICKNAME_KEY = "stt-nickname";
 

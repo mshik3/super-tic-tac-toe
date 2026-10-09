@@ -1,6 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
 import type {
-	PlayerConnection,
 	ClientMessage,
 	ServerMessage,
 	MakeMovePayload,
@@ -11,32 +10,32 @@ import type {
 	GameState,
 	PlayerSymbol,
 	StoredMove,
-} from '../types/messages';
-import { createNewGame, applyMove, createMove } from '../lib/gameEngine';
-import { moveToChessNotation } from '../lib/chessNotation';
+} from '../../../src/types/messages';
+import { createNewGame, applyMove, createMove } from '../../../src/lib/gameEngine';
+import { moveToChessNotation } from '../../../src/utils/chessNotation';
 
 const TURN_TIMEOUT_MS = 90_000;
+
+interface PlayerConnection {
+	symbol: PlayerSymbol;
+	websocket: WebSocket;
+	connected: boolean;
+	nickname?: string;
+}
 
 export class GameSession extends DurableObject<Env> {
 	private gameState: GameState | null = null;
 	private players: Map<string, PlayerConnection> = new Map();
-	private gameId: string = '';
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
 	private moves: StoredMove[] = [];
 	private turnDeadline = 0; // epoch ms when the current player loses on time
-	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
-
-	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env);
-	}
 
 	private async persist(): Promise<void> {
 		await this.ctx.storage.put({ moves: this.moves, gameState: this.gameState, turnDeadline: this.turnDeadline });
 	}
 
 	private async initializeGameSession(gameId: string): Promise<void> {
-		this.gameId = gameId;
 		this.moves = (await this.ctx.storage.get<StoredMove[]>('moves')) ?? [];
 		this.gameState = (await this.ctx.storage.get<GameState>('gameState')) ?? createNewGame(gameId);
 		this.turnDeadline = (await this.ctx.storage.get<number>('turnDeadline')) ?? 0;
@@ -116,14 +115,8 @@ export class GameSession extends DurableObject<Env> {
 				return new Response(null, { status: 400 });
 			}
 
-			// Security: Validate parameter formats and sanitize
-			if (typeof playerId !== 'string' || playerId.length > 100 || typeof gameId !== 'string' || gameId.length > 100) {
-				server.close(1008, 'Invalid connection parameters');
-				return new Response(null, { status: 400 });
-			}
-
-			// Security: Sanitize IDs - only allow alphanumeric, hyphens, underscores
-			if (!/^[a-zA-Z0-9\-_]+$/.test(playerId) || !/^[a-zA-Z0-9\-_]+$/.test(gameId)) {
+			// Security: only allow alphanumeric, hyphens, underscores
+			if (playerId.length > 100 || gameId.length > 100 || !/^[a-zA-Z0-9\-_]+$/.test(playerId) || !/^[a-zA-Z0-9\-_]+$/.test(gameId)) {
 				server.close(1008, 'Invalid connection parameters');
 				return new Response(null, { status: 400 });
 			}
@@ -148,12 +141,9 @@ export class GameSession extends DurableObject<Env> {
 
 			// Check if this player is reconnecting to an existing game
 			const existingPlayer = this.players.get(playerId);
-			let playerSymbol: PlayerSymbol = allowed.symbol;
 
 			if (existingPlayer) {
-				// Player is reconnecting - preserve their symbol and update connection.
 				// Close the replaced socket so a stale tab can't keep playing.
-				playerSymbol = existingPlayer.symbol;
 				try {
 					existingPlayer.websocket.close(1000, 'Replaced by new connection');
 				} catch {
@@ -161,33 +151,14 @@ export class GameSession extends DurableObject<Env> {
 				}
 				existingPlayer.websocket = server;
 				existingPlayer.connected = true;
-				existingPlayer.lastPing = Date.now();
-				if (this.env.ENVIRONMENT !== 'production') console.log(`Player ${playerId} reconnected with symbol ${playerSymbol}`);
+				if (this.env.ENVIRONMENT !== 'production') console.log(`Player ${playerId} reconnected with symbol ${allowed.symbol}`);
 			} else {
-				// New player joining - symbol comes from allowed list
-
-				// Add new player connection
-				const playerConnection: PlayerConnection = {
-					playerId,
-					symbol: playerSymbol,
-					websocket: server,
-					connected: true,
-					lastPing: Date.now(),
-					nickname: this.allowedPlayers.get(playerId)?.nickname,
-				};
-
-				this.players.set(playerId, playerConnection);
-				if (this.env.ENVIRONMENT !== 'production') console.log(`New player ${playerId} joined with symbol ${playerSymbol}`);
+				this.players.set(playerId, { symbol: allowed.symbol, websocket: server, connected: true, nickname: allowed.nickname });
+				if (this.env.ENVIRONMENT !== 'production') console.log(`New player ${playerId} joined with symbol ${allowed.symbol}`);
 			}
 
-
-			// Set up WebSocket message handler
 			server.addEventListener('message', async (event) => {
-				// NOTE: If future client messages include display names, enforce the
-				// same nickname validation as frontend `src/utils/nickname.ts` before
-				// storing or broadcasting. Keep ASCII letters/digits/spaces only,
-				// length 3-20, and basic profanity filtering.
-				await this.handleWebSocketMessage(playerId, event.data);
+				await this.handleWebSocketMessage(playerId, event.data as string);
 			});
 
 			// Set up WebSocket close handler
@@ -197,10 +168,6 @@ export class GameSession extends DurableObject<Env> {
 				if (this.players.get(playerId)?.websocket === server) this.handlePlayerDisconnect(playerId);
 			});
 
-			if (this.players.size >= 2 && this.gameState!.status === 'waiting') {
-				this.gameState!.status = 'playing';
-				await this.persist();
-			}
 			// updateAlarm starts the turn clock once both players are in, so run it first
 			await this.updateAlarm();
 			this.broadcastGameState();
@@ -209,20 +176,6 @@ export class GameSession extends DurableObject<Env> {
 				status: 101,
 				webSocket: client,
 			});
-		}
-
-		// Handle HTTP requests for game info
-		if (url.pathname === '/game-info') {
-			return new Response(
-				JSON.stringify({
-					gameId: this.gameId,
-					playerCount: this.players.size,
-					status: this.gameState?.status || 'waiting',
-				}),
-				{
-					headers: { 'Content-Type': 'application/json' },
-				}
-			);
 		}
 
 		return new Response('Not found', { status: 404 });
@@ -258,7 +211,7 @@ export class GameSession extends DurableObject<Env> {
 						this.sendError(playerId, 'Too many requests');
 						return;
 					}
-					await this.handleMakeMove(playerId, clientMessage.payload as MakeMovePayload);
+					await this.handleMakeMove(playerId, player, this.gameState, clientMessage.payload);
 					break;
 				default:
 					this.sendError(playerId, 'Invalid request');
@@ -268,45 +221,14 @@ export class GameSession extends DurableObject<Env> {
 		}
 	}
 
-	private async handleMakeMove(playerId: string, payload: MakeMovePayload) {
-		const player = this.players.get(playerId);
-		if (!player || !this.gameState) {
-			this.sendError(playerId, 'Invalid request');
-			return;
-		}
-
+	private async handleMakeMove(playerId: string, player: PlayerConnection, gameState: GameState, payload: MakeMovePayload) {
 		// Security: Validate payload structure and types
 		if (!payload || typeof payload !== 'object') {
 			this.sendError(playerId, 'Invalid move data');
 			return;
 		}
 
-		const { boardIndex, cellIndex, sequenceNumber } = payload;
-
-		// Validate sequence number if provided (for optimistic update validation)
-		if (sequenceNumber !== undefined) {
-			const expectedSequence = this.playerSequenceNumbers.get(playerId) || 0;
-			if (sequenceNumber <= expectedSequence) {
-				// This is a duplicate or out-of-order move
-				this.sendError(playerId, 'Duplicate or out-of-order move');
-				return;
-			}
-		}
-
-		// Check for duplicate moves in recent history (last 10 moves)
-		const recentMoves = this.moves.slice(-10);
-		const isDuplicate = recentMoves.some(
-			(storedMove) =>
-				storedMove.boardIndex === boardIndex &&
-				storedMove.cellIndex === cellIndex &&
-				storedMove.player === player.symbol &&
-				Date.now() - storedMove.timestamp < 5000 // Within 5 seconds
-		);
-
-		if (isDuplicate) {
-			this.sendError(playerId, 'Duplicate move detected');
-			return;
-		}
+		const { boardIndex, cellIndex } = payload;
 
 		// Security: Strict bounds checking for board and cell indices
 		if (
@@ -322,28 +244,28 @@ export class GameSession extends DurableObject<Env> {
 		}
 
 		// Check if it's the player's turn
-		if (this.gameState.currentPlayer !== player.symbol) {
+		if (gameState.currentPlayer !== player.symbol) {
 			this.sendError(playerId, 'Invalid request');
 			return;
 		}
 
 		// Check if game is in progress
-		if (this.gameState.status !== 'playing') {
+		if (gameState.status !== 'playing') {
 			this.sendError(playerId, 'Game not active');
 			return;
 		}
 
 		// Create and apply the move with additional server-side validation
 		const move = createMove(boardIndex, cellIndex, player.symbol);
-		const result = applyMove(this.gameState, move);
+		const result = applyMove(gameState, move);
 
 		if (!result.valid) {
 			// Security: Sanitized error message - don't expose internal game logic
 			const moveResultPayload: MoveResultPayload = {
 				valid: false,
-				board: this.gameState.board,
-				currentPlayer: this.gameState.currentPlayer,
-				gameStatus: this.gameState.status,
+				board: gameState.board,
+				currentPlayer: gameState.currentPlayer,
+				gameStatus: gameState.status,
 				error: 'Invalid move',
 			};
 
@@ -371,11 +293,6 @@ export class GameSession extends DurableObject<Env> {
 		this.moves.push(storedMove);
 		this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 		await this.persist();
-
-		// Update sequence number tracking for this player
-		if (sequenceNumber !== undefined) {
-			this.playerSequenceNumbers.set(playerId, sequenceNumber);
-		}
 
 		// Send successful move result to all players
 		const moveResultPayload: MoveResultPayload = {
@@ -463,9 +380,6 @@ export class GameSession extends DurableObject<Env> {
 			await this.updateAlarm();
 			return;
 		}
-		if (this.gameState?.status === 'waiting') {
-			this.broadcast({ type: 'ERROR', payload: { message: 'Opponent never connected' } });
-		}
 		await this.destroy();
 	}
 
@@ -480,7 +394,6 @@ export class GameSession extends DurableObject<Env> {
 		this.players.clear();
 		this.allowedPlayers.clear();
 		this.moveRateLimit.clear();
-		this.playerSequenceNumbers.clear();
 		this.gameState = null;
 		this.moves = [];
 		await this.ctx.storage.deleteAll();
@@ -528,7 +441,7 @@ export class GameSession extends DurableObject<Env> {
 	private getOpponentNickname(playerId: string): string | undefined {
 		for (const [id, player] of this.players) {
 			if (id !== playerId) {
-				return player.nickname ?? this.allowedPlayers.get(id)?.nickname;
+				return player.nickname;
 			}
 		}
 		return undefined;

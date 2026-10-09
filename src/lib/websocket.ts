@@ -1,7 +1,6 @@
 import type {
   ClientMessage,
   ServerMessage,
-  MakeMovePayload,
   QueueStatusPayload,
 } from "../types/messages";
 
@@ -105,26 +104,6 @@ export class GameWebSocket {
     }
   }
 
-  makeMove(
-    boardIndex: number,
-    cellIndex: number,
-    sequenceNumber?: number
-  ): boolean {
-    const payload: MakeMovePayload = {
-      boardIndex,
-      cellIndex,
-      ...(sequenceNumber !== undefined && { sequenceNumber }),
-    };
-    return this.send({
-      type: "MAKE_MOVE",
-      payload,
-    });
-  }
-
-  getStatus(): WebSocketStatus {
-    return this.status;
-  }
-
   private setStatus(status: WebSocketStatus): void {
     if (this.status !== status) {
       this.status = status;
@@ -143,116 +122,45 @@ export class GameWebSocket {
   }
 }
 
+type JoinQueueResult =
+  | { matched: true; gameId: string; yourSymbol: "X" | "O"; connectToken: string }
+  | ({ matched: false } & QueueStatusPayload);
+
 // API client for HTTP requests to the worker
 export class GameAPIClient {
-  private baseUrl: string;
+  private baseUrl = __WORKER_URL__;
 
-  constructor(baseUrl?: string) {
-    // Prefer Vite define, fallback to env, then hardcoded (legacy)
-    const definedUrl =
-      typeof __WORKER_URL__ !== "undefined" ? __WORKER_URL__ : undefined;
-    // Vite exposes typed env via ImportMetaEnv, but handle undefined for SSR/tools
-    const envUrl = (import.meta as unknown as { env?: Record<string, string> })
-      .env?.VITE_WORKER_URL as string | undefined;
-    this.baseUrl =
-      baseUrl ||
-      definedUrl ||
-      envUrl ||
-      "https://super-tic-tac-toe-worker.mshik3.workers.dev";
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error(
+        "Unable to connect to game server. This may be due to network issues or server maintenance."
+      );
+    }
+    if (response.status === 429) {
+      throw new Error("Too many requests. Please wait a moment and try again.");
+    }
+    if (response.status >= 500) {
+      throw new Error("Server is temporarily unavailable. Please try again in a moment.");
+    }
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.statusText || "Unknown error"}`);
+    }
+    return response.json();
   }
 
-  async joinQueue(
-    playerId: string,
-    nickname?: string
-  ): Promise<
-    | {
-        matched: true;
-        gameId: string;
-        yourSymbol: "X" | "O";
-        connectToken: string;
-      }
-    | ({ matched: false } & QueueStatusPayload)
-  > {
-    try {
-      const response = await fetch(`${this.baseUrl}/queue/join`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ playerId, nickname }),
-      });
-
-      if (!response.ok) {
-        // Enhanced error handling for different HTTP status codes
-        if (response.status === 0 || !response.status) {
-          throw new Error(
-            "Network connection failed. Please check your internet connection and try again."
-          );
-        }
-        if (response.status >= 500) {
-          throw new Error(
-            "Server is temporarily unavailable. Please try again in a moment."
-          );
-        }
-        if (response.status === 429) {
-          throw new Error(
-            "Too many requests. Please wait a moment and try again."
-          );
-        }
-        throw new Error(
-          `Failed to join queue: ${response.statusText || "Unknown error"}`
-        );
-      }
-
-      return response.json();
-    } catch (error) {
-      // Handle network errors (CORS, DNS, connection issues)
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        throw new Error(
-          "Unable to connect to game server. This may be due to network issues or server maintenance."
-        );
-      }
-      throw error;
-    }
+  joinQueue(playerId: string, nickname?: string): Promise<JoinQueueResult> {
+    return this.post("/queue/join", { playerId, nickname });
   }
 
-  async leaveQueue(
-    playerId: string
-  ): Promise<{ success: boolean; playersInQueue: number }> {
-    try {
-      const response = await fetch(`${this.baseUrl}/queue/leave`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ playerId }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 0 || !response.status) {
-          throw new Error(
-            "Network connection failed. Please check your internet connection and try again."
-          );
-        }
-        if (response.status >= 500) {
-          throw new Error(
-            "Server is temporarily unavailable. Please try again in a moment."
-          );
-        }
-        throw new Error(
-          `Failed to leave queue: ${response.statusText || "Unknown error"}`
-        );
-      }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        throw new Error(
-          "Unable to connect to game server. This may be due to network issues or server maintenance."
-        );
-      }
-      throw error;
-    }
+  leaveQueue(playerId: string): Promise<{ success: boolean; playersInQueue: number }> {
+    return this.post("/queue/leave", { playerId });
   }
 
   // fetch can be cancelled mid-unload; a beacon is delivered after the page is gone

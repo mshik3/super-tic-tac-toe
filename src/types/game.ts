@@ -35,13 +35,6 @@ export interface GameState {
   lastMove: number;
 }
 
-// Player information
-export interface Player {
-  id: string;
-  symbol: PlayerSymbol;
-  connected: boolean;
-}
-
 // Move representation
 export interface Move {
   boardIndex: number; // Which sub-board (0-8)
@@ -55,18 +48,6 @@ export interface MoveResult {
   valid: boolean;
   error?: string;
   newGameState?: GameState;
-}
-
-// UI-specific types
-export interface CellPosition {
-  boardIndex: number;
-  cellIndex: number;
-}
-
-export interface GameUIState {
-  hoveredCell: CellPosition | null;
-  selectedCell: CellPosition | null;
-  showValidMoves: boolean;
 }
 
 // Constants

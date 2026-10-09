@@ -3,51 +3,13 @@ export { GameSession } from './durable-objects/GameSession';
 export { MatchmakingQueue } from './durable-objects/MatchmakingQueue';
 
 export default {
-	/**
-	 * Main Worker fetch handler - routes requests to appropriate Durable Objects
-	 *
-	 * @param request - The request submitted to the Worker from the client
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 * @param ctx - The execution context of the Worker
-	 * @returns The response to be sent back to the client
-	 */
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
-		// Security: Environment-specific CORS origins from environment variables
-		const allowedOriginsStr = env.ALLOWED_ORIGINS || 'https://super-tic-tac-toe.pages.dev';
-		const allowedOrigins = allowedOriginsStr.split(',').map((o: string) => o.trim());
-
 		const origin = request.headers.get('Origin');
-		const isDev = env.ENVIRONMENT !== 'production';
-
-		// Safer origin check: exact match or subdomain match when pattern like https://*.pages.dev
-		const originAllowed = (incoming: string | null): string | null => {
-			if (!incoming) return null;
-			try {
-				const incomingUrl = new URL(incoming);
-				for (const allowed of allowedOrigins) {
-					if (!allowed) continue;
-					if (allowed.includes('*')) {
-						const allowedUrl = new URL(allowed.replace('*.', 'subdomain.'));
-						const suffix = allowedUrl.hostname.replace('subdomain.', '.');
-						if (incomingUrl.protocol === allowedUrl.protocol && incomingUrl.hostname.endsWith(suffix)) {
-							return incoming;
-						}
-					} else if (incoming === allowed) {
-						return incoming;
-					}
-				}
-				// Allow localhost in non-production environments
-				if (isDev && incomingUrl.hostname === 'localhost') return incoming;
-			} catch (error) {
-				// Ignore malformed Origin header but continue with base security headers
-				console.warn('Origin parse failed:', error);
-			}
-			return null;
-		};
-
-		const allowedOrigin = originAllowed(origin);
+		const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o: string) => o.trim());
+		const isDevLocalhost = env.ENVIRONMENT !== 'production' && URL.parse(origin ?? '')?.hostname === 'localhost';
+		const allowedOrigin = origin && (allowedOrigins.includes(origin) || isDevLocalhost) ? origin : null;
 
 		const baseHeaders: Record<string, string> = {
 			'X-Content-Type-Options': 'nosniff',
@@ -139,10 +101,7 @@ export default {
 
 		// Default response
 		return new Response(
-			JSON.stringify({
-				error: 'Not found',
-				availableEndpoints: ['/queue', '/game', '/health'],
-			}),
+			JSON.stringify({ error: 'Not found' }),
 			{
 				status: 404,
 				headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -19,7 +19,7 @@ paths:
 
 ## WebSocket Messages
 - Server → Client: `GAME_STATE`, `MOVE_RESULT`, `GAME_OVER`, `ERROR`
-- Client → Server: `MAKE_MOVE` `{ boardIndex, cellIndex, sequenceNumber? }`
+- Client → Server: `MAKE_MOVE` `{ boardIndex, cellIndex }` (replays are rejected by the turn check)
 
 ## State Management (store/gameStore.ts)
 - Single Zustand store — both local and online game state

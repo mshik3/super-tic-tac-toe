@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -9,5 +10,11 @@ export default defineConfig({
       process.env.VITE_WORKER_URL ||
         "https://super-tic-tac-toe-worker.mshik3.workers.dev"
     ),
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/setupTests.ts"],
+    globals: true,
+    css: true,
   },
 });

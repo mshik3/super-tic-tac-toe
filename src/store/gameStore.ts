@@ -6,15 +6,9 @@ import type {
   GameStatePayload,
   MoveResultPayload,
   GameOverPayload,
-  StoredMove,
   ErrorPayload,
 } from "../types/messages";
-import {
-  createNewGame,
-  applyMove,
-  createMove,
-  resetGame,
-} from "../lib/gameEngine";
+import { createNewGame, applyMove, createMove } from "../lib/gameEngine";
 import { devtools } from "zustand/middleware";
 import { moveToChessNotation, type GameMove } from "../utils/chessNotation";
 import { GameWebSocket, GameAPIClient } from "../lib/websocket";
@@ -28,23 +22,13 @@ import {
 export type GameMode = "local" | "online";
 export type Screen = "menu" | "searching" | "playing";
 
-interface PendingMove {
-  boardIndex: number;
-  cellIndex: number;
-  player: PlayerSymbol;
-  timestamp: number;
-  sequenceNumber: number;
-}
-
 interface GameStore {
   // Game state
   gameState: GameState | null;
   moves: GameMove[];
-  pendingMoves: PendingMove[];
-  moveSequenceNumber: number;
+  pendingMoves: number; // optimistic online moves the server hasn't confirmed yet
 
   // UI state
-  isLoading: boolean;
   error: string | null;
   currentScreen: Screen;
 
@@ -68,12 +52,10 @@ interface GameStore {
   startNewGame: () => void;
   makeMove: (boardIndex: number, cellIndex: number) => void;
   resetCurrentGame: () => void;
-  setError: (error: string | null) => void;
   clearError: () => void;
 
   // Online actions
   setGameMode: (mode: GameMode) => void;
-  setScreen: (screen: Screen) => void;
   setPlayerNickname: (nickname: string) => void;
   findOnlineGame: () => void;
   connectToGame: (
@@ -85,19 +67,7 @@ interface GameStore {
   handleServerMessage: (message: ServerMessage) => void;
 }
 
-// Generate a cryptographically secure unique player ID
-const generatePlayerId = () => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return `player-${crypto.randomUUID()}`;
-  }
-  // Fallback for environments without crypto.randomUUID()
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  const hex = Array.from(array, (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-  return `player-${hex}`;
-};
+const generatePlayerId = () => `player-${crypto.randomUUID()}`;
 
 // sessionStorage, not localStorage: a refresh rejoins the game, but a second
 // tab must not take over the same seat.
@@ -139,9 +109,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
   // Initial state
   gameState: null,
   moves: [],
-  pendingMoves: [],
-  moveSequenceNumber: 0,
-  isLoading: false,
+  pendingMoves: 0,
   error: null,
   currentScreen: "menu",
 
@@ -168,22 +136,14 @@ const storeImpl = (set: any, get: any): GameStore => ({
       gameState: newGameState,
       moves: [],
       error: null,
-      isLoading: false,
       currentScreen: "playing",
       gameMode: "local",
     });
   },
 
   makeMove: (boardIndex: number, cellIndex: number) => {
-    const {
-      gameState,
-      moves,
-      pendingMoves,
-      moveSequenceNumber,
-      gameMode,
-      websocket,
-      playerSymbol,
-    } = get();
+    const { gameState, moves, pendingMoves, gameMode, websocket, playerSymbol } =
+      get();
 
     if (!gameState) {
       set({ error: "No active game" });
@@ -195,64 +155,12 @@ const storeImpl = (set: any, get: any): GameStore => ({
       return;
     }
 
-    // ── Online: optimistic update, then send to server ──
-    if (gameMode === "online" && websocket) {
-      if (gameState.currentPlayer !== playerSymbol) {
-        set({ error: "Not your turn" });
-        return;
-      }
-
-      const move = createMove(boardIndex, cellIndex, playerSymbol);
-      const result = applyMove(gameState, move);
-
-      if (!result.valid) {
-        set({ error: result.error || "Invalid move" });
-        return;
-      }
-
-      const notation = moveToChessNotation(move);
-      const gameMove: GameMove = {
-        notation,
-        player: move.player,
-        moveNumber: moves.length + 1,
-        timestamp: move.timestamp,
-      };
-
-      const pendingMove: PendingMove = {
-        boardIndex,
-        cellIndex,
-        player: playerSymbol,
-        timestamp: move.timestamp,
-        sequenceNumber: moveSequenceNumber + 1,
-      };
-
-      set({
-        gameState: result.newGameState,
-        moves: [...moves, gameMove],
-        pendingMoves: [...pendingMoves, pendingMove],
-        moveSequenceNumber: moveSequenceNumber + 1,
-        error: null,
-      });
-
-      const success = websocket.makeMove(
-        boardIndex,
-        cellIndex,
-        moveSequenceNumber + 1
-      );
-      if (!success) {
-        // Network failure — roll back the optimistic update
-        set({
-          gameState,
-          moves,
-          pendingMoves,
-          moveSequenceNumber,
-          error: "Failed to send move - please try again",
-        });
-      }
+    const online = gameMode === "online" && websocket;
+    if (online && gameState.currentPlayer !== playerSymbol) {
+      set({ error: "Not your turn" });
       return;
     }
 
-    // ── Local game ──
     const move = createMove(boardIndex, cellIndex, gameState.currentPlayer);
     const result = applyMove(gameState, move);
 
@@ -261,9 +169,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
       return;
     }
 
-    const notation = moveToChessNotation(move);
     const gameMove: GameMove = {
-      notation,
+      notation: moveToChessNotation(move),
       player: move.player,
       moveNumber: moves.length + 1,
       timestamp: move.timestamp,
@@ -272,8 +179,19 @@ const storeImpl = (set: any, get: any): GameStore => ({
     set({
       gameState: result.newGameState,
       moves: [...moves, gameMove],
+      pendingMoves: online ? pendingMoves + 1 : pendingMoves,
       error: null,
     });
+
+    // Online: the update above is optimistic; roll back if the send fails
+    if (online && !websocket.send({ type: "MAKE_MOVE", payload: { boardIndex, cellIndex } })) {
+      set({
+        gameState,
+        moves,
+        pendingMoves,
+        error: "Failed to send move - please try again",
+      });
+    }
   },
 
   resetCurrentGame: () => {
@@ -289,11 +207,9 @@ const storeImpl = (set: any, get: any): GameStore => ({
       return;
     }
 
-    const resetGameState = resetGame(gameState.gameId);
-    set({ gameState: resetGameState, moves: [], error: null });
+    set({ gameState: createNewGame(gameState.gameId), moves: [], error: null });
   },
 
-  setError: (error: string | null) => set({ error }),
   clearError: () => set({ error: null }),
 
   // ─── Online actions ────────────────────────────────────────────────────────
@@ -304,8 +220,6 @@ const storeImpl = (set: any, get: any): GameStore => ({
       get().startNewGame();
     }
   },
-
-  setScreen: (screen: Screen) => set({ currentScreen: screen }),
 
   setPlayerNickname: (nickname: string) => {
     const result = validateNickname(nickname);
@@ -325,7 +239,6 @@ const storeImpl = (set: any, get: any): GameStore => ({
       gameMode: "online",
       currentScreen: "searching",
       error: null,
-      isLoading: true,
     });
   },
 
@@ -367,7 +280,6 @@ const storeImpl = (set: any, get: any): GameStore => ({
       websocket,
       gameMode: "online",
       currentScreen: "playing",
-      isLoading: false,
     });
   },
 
@@ -413,19 +325,10 @@ const storeImpl = (set: any, get: any): GameStore => ({
           lastMove: Date.now(),
         };
 
-        const gameMoves: GameMove[] = (payload.moves || []).map(
-          (storedMove: StoredMove) => ({
-            notation: storedMove.notation,
-            player: storedMove.player,
-            moveNumber: storedMove.moveNumber,
-            timestamp: storedMove.timestamp,
-          })
-        );
-
         set({
           gameState: localGameState,
-          moves: gameMoves,
-          pendingMoves: [],
+          moves: payload.moves,
+          pendingMoves: 0,
           playerSymbol: payload.yourSymbol,
           opponentConnected: payload.opponentConnected,
           opponentNickname: payload.opponentNickname ?? null,
@@ -477,16 +380,16 @@ const storeImpl = (set: any, get: any): GameStore => ({
           set({
             gameState: updatedGameState,
             moves: updatedMoves,
-            pendingMoves: pendingMoves.slice(0, -1),
+            pendingMoves: Math.max(0, pendingMoves - 1),
             turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
             error: null,
           });
         } else {
           // Server rejected the move — roll back the last optimistic entry
-          if (pendingMoves.length > 0) {
+          if (pendingMoves > 0) {
             set({
               moves: moves.slice(0, -1),
-              pendingMoves: pendingMoves.slice(0, -1),
+              pendingMoves: pendingMoves - 1,
               error: payload.error || "Move was rejected by server",
             });
           } else {

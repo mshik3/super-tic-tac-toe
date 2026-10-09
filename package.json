@@ -10,13 +10,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage",
     "deploy:worker": "cd worker && npm run deploy",
     "deploy:all": "npm run deploy:pages && npm run deploy:worker",
     "prepare": "husky",
     "typecheck": "tsc -b --noEmit",
     "typecheck:worker": "tsc -p worker/tsconfig.json --noEmit",
-    "test:related": "vitest related --run",
     "deploy:pages": "npm run build && cd worker && npx wrangler pages deploy ../dist --project-name super-tic-tac-toe --branch main"
   },
   "dependencies": {

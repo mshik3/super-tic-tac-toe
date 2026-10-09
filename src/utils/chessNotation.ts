@@ -25,88 +25,9 @@ const CELL_NOTATION: Record<number, string> = {
   8: "lr", // lower right
 };
 
-/**
- * Convert a move to chess-style notation
- * @param move - The move to convert
- * @returns Chess notation string (e.g., "Rr", "URm", "Mlo")
- */
+// e.g. "Rr", "URm", "Mlo"
 export function moveToChessNotation(move: Move): string {
-  const boardNotation = BOARD_NOTATION[move.boardIndex];
-  const cellNotation = CELL_NOTATION[move.cellIndex];
-
-  return `${boardNotation}${cellNotation}`;
-}
-
-/**
- * Convert chess notation back to board and cell indices
- * @param notation - Chess notation string
- * @returns Object with boardIndex and cellIndex, or null if invalid
- */
-export function chessNotationToMove(
-  notation: string
-): { boardIndex: number; cellIndex: number } | null {
-  // Try different splits to find valid board/cell combination
-  for (let i = 1; i <= notation.length - 1; i++) {
-    const potentialBoard = notation.substring(0, i);
-    const potentialCell = notation.substring(i);
-
-    const boardIndex = Object.entries(BOARD_NOTATION).find(
-      ([, value]) => value === potentialBoard
-    )?.[0];
-    const cellIndex = Object.entries(CELL_NOTATION).find(
-      ([, value]) => value === potentialCell
-    )?.[0];
-
-    if (boardIndex !== undefined && cellIndex !== undefined) {
-      return {
-        boardIndex: parseInt(boardIndex),
-        cellIndex: parseInt(cellIndex),
-      };
-    }
-  }
-
-  return null;
-}
-
-/**
- * Get a human-readable description of a move
- * @param notation - Chess notation string
- * @returns Human-readable description
- */
-export function getNotationDescription(notation: string): string {
-  const move = chessNotationToMove(notation);
-  if (!move) return notation;
-
-  const boardName = BOARD_NOTATION[move.boardIndex];
-  const cellName = CELL_NOTATION[move.cellIndex];
-
-  const boardDesc =
-    {
-      UL: "Upper Left",
-      U: "Upper",
-      UR: "Upper Right",
-      L: "Left",
-      M: "Middle",
-      R: "Right",
-      LL: "Lower Left",
-      Lo: "Lower",
-      LR: "Lower Right",
-    }[boardName] || boardName;
-
-  const cellDesc =
-    {
-      ul: "upper left",
-      u: "upper",
-      ur: "upper right",
-      l: "left",
-      m: "middle",
-      r: "right",
-      ll: "lower left",
-      lo: "lower",
-      lr: "lower right",
-    }[cellName] || cellName;
-
-  return `${boardDesc} board, ${cellDesc} cell`;
+  return `${BOARD_NOTATION[move.boardIndex]}${CELL_NOTATION[move.cellIndex]}`;
 }
 
 export interface GameMove {

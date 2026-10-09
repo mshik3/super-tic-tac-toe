@@ -207,11 +207,3 @@ export function createMove(
   };
 }
 
-/**
- * Reset game to initial state
- * @param gameId - Game identifier to maintain
- * @returns Fresh game state
- */
-export function resetGame(gameId: string): GameState {
-  return createNewGame(gameId);
-}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { GameAPIClient } from "../lib/websocket";
 
 export interface MatchmakingScreenProps {
@@ -20,121 +20,53 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
 }) => {
   const [status, setStatus] = useState<"searching" | "error">("searching");
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
-  const [estimatedWaitTime, setEstimatedWaitTime] = useState<number | null>(null);
   const [playersInQueue, setPlayersInQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const backoffDelayRef = useRef(2000);
-  const consecutiveFailuresRef = useRef(0);
-  const isCircuitBreakerOpenRef = useRef(false);
 
   const apiClient = useMemo(() => new GameAPIClient(), []);
 
   useEffect(() => {
     let cancelled = false;
-    let pollInterval: ReturnType<typeof setInterval> | undefined;
-    let countdownInterval: ReturnType<typeof setInterval> | undefined;
-    let retryTimeout: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    let rateLimitDelay = 2000;
 
-    const clearTimers = () => {
-      if (pollInterval !== undefined) clearInterval(pollInterval);
-      if (countdownInterval !== undefined) clearInterval(countdownInterval);
-      if (retryTimeout !== undefined) clearTimeout(retryTimeout);
-    };
-
-    const startPolling = () => {
-      pollInterval = setInterval(async () => {
-        if (cancelled) { clearTimers(); return; }
-        if (isCircuitBreakerOpenRef.current) {
-          clearInterval(pollInterval!);
-          setStatus("error");
-          setError("Too many connection failures. Please try again later.");
-          return;
-        }
-
-        try {
-          const joinResult = await apiClient.joinQueue(playerId, playerNickname);
-          if (cancelled) return;
-
-          if (joinResult.matched) {
-            clearTimers();
-            onGameFound(joinResult.gameId, joinResult.yourSymbol, joinResult.connectToken);
-            return;
-          }
-
-          setQueuePosition(joinResult.position);
-          setEstimatedWaitTime(joinResult.estimatedWaitTime);
-          setPlayersInQueue(joinResult.playersInQueue);
-          consecutiveFailuresRef.current = 0;
-          setError(null);
-        } catch (err) {
-          if (cancelled) return;
-          consecutiveFailuresRef.current += 1;
-          const failures = consecutiveFailuresRef.current;
-
-          if (failures >= 5) {
-            isCircuitBreakerOpenRef.current = true;
-            clearInterval(pollInterval!);
-            setStatus("error");
-            setError("Too many connection failures. Please refresh and try again.");
-            return;
-          }
-
-          if (err instanceof Error && err.message.includes("Too many requests")) {
-            backoffDelayRef.current = Math.min(backoffDelayRef.current * 2, 60000);
-            const delaySecs = Math.ceil(backoffDelayRef.current / 1000);
-            setError(`Rate limited. Retrying in ${delaySecs}s…`);
-
-            let remaining = delaySecs;
-            countdownInterval = setInterval(() => {
-              remaining -= 1;
-              if (remaining <= 0) {
-                clearInterval(countdownInterval!);
-                setError(null);
-              } else {
-                setError(`Rate limited. Retrying in ${remaining}s…`);
-              }
-            }, 1000);
-
-            clearInterval(pollInterval!);
-            retryTimeout = setTimeout(() => {
-              if (!cancelled && !isCircuitBreakerOpenRef.current) startPolling();
-            }, backoffDelayRef.current);
-          } else {
-            setError(`Connection error (${failures}/5). Retrying…`);
-          }
-        }
-      }, Math.max(backoffDelayRef.current, 500));
-    };
-
-    const searchForGame = async () => {
+    const poll = async () => {
+      let delay = 2000;
       try {
-        setStatus("searching");
-        setError(null);
         const result = await apiClient.joinQueue(playerId, playerNickname);
         if (cancelled) return;
-
         if (result.matched) {
           onGameFound(result.gameId, result.yourSymbol, result.connectToken);
           return;
         }
-
         setQueuePosition(result.position);
-        setEstimatedWaitTime(result.estimatedWaitTime);
         setPlayersInQueue(result.playersInQueue);
-        startPolling();
+        failures = 0;
+        setError(null);
       } catch (err) {
-        if (!cancelled) {
+        if (cancelled) return;
+        failures += 1;
+        if (failures >= 5) {
           setStatus("error");
-          setError(err instanceof Error ? err.message : "Failed to join queue");
+          setError("Too many connection failures. Please refresh and try again.");
+          return;
+        }
+        if (err instanceof Error && err.message.includes("Too many requests")) {
+          rateLimitDelay = Math.min(rateLimitDelay * 2, 60000);
+          delay = rateLimitDelay;
+          setError(`Rate limited. Retrying in ${Math.ceil(delay / 1000)}s…`);
+        } else {
+          setError(`Connection error (${failures}/5). Retrying…`);
         }
       }
+      timer = setTimeout(poll, delay);
     };
 
-    searchForGame();
+    poll();
     return () => {
       cancelled = true;
-      clearTimers();
+      clearTimeout(timer);
     };
   }, [playerId, playerNickname, onGameFound, apiClient]);
 
@@ -151,12 +83,6 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
       // best-effort
     }
     onCancel();
-  };
-
-  const formatWaitTime = (seconds: number | null): string => {
-    if (seconds === null) return "—";
-    if (seconds < 60) return `${seconds}s`;
-    return `${Math.round(seconds / 60)}m`;
   };
 
   return (
@@ -247,15 +173,10 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
                 />
               </div>
 
-              {/* Stats */}
-              <div className="w-full grid grid-cols-2 gap-3">
+              <div className="w-full">
                 <StatBox
                   label="Queue Position"
                   value={queuePosition !== null ? `#${queuePosition}` : "—"}
-                />
-                <StatBox
-                  label="Est. Wait"
-                  value={formatWaitTime(estimatedWaitTime)}
                 />
               </div>
 

@@ -1,57 +1,26 @@
-// Shared message protocol types for Super Tic-Tac-Toe multiplayer
-export type PlayerSymbol = "X" | "O";
-export type GameStatus = "waiting" | "playing" | "finished";
-export type GameWinner = PlayerSymbol | "draw" | null;
+// Message protocol shared by the frontend and the worker
+import type {
+  GameBoard,
+  GameStatus,
+  GameWinner,
+  PlayerSymbol,
+} from "./game";
 
-// Game board types (matching existing game types)
-export type Cell = PlayerSymbol | null;
-export type SubBoard = Cell[];
-export type MainBoard = Cell[];
+export type * from "./game";
 
-export interface GameBoard {
-  main: MainBoard;
-  sub: SubBoard[];
-  activeBoard: number | null;
-}
-
-export interface GameState {
-  gameId: string;
-  board: GameBoard;
-  currentPlayer: PlayerSymbol;
-  status: GameStatus;
-  winner: GameWinner;
-  createdAt: number;
-  lastMove: number;
-}
-
-// WebSocket message types
 export interface ClientMessage {
-  type: "MAKE_MOVE" | "JOIN_GAME" | "LEAVE_QUEUE";
-  payload: MakeMovePayload | Record<string, unknown>;
+  type: "MAKE_MOVE";
+  payload: MakeMovePayload;
 }
 
 export interface ServerMessage {
-  type:
-    | "GAME_STATE"
-    | "MOVE_RESULT"
-    | "GAME_OVER"
-    | "QUEUE_STATUS"
-    | "OPPONENT_FOUND"
-    | "ERROR";
-  payload:
-    | GameStatePayload
-    | MoveResultPayload
-    | GameOverPayload
-    | QueueStatusPayload
-    | OpponentFoundPayload
-    | ErrorPayload;
+  type: "GAME_STATE" | "MOVE_RESULT" | "GAME_OVER" | "ERROR";
+  payload: GameStatePayload | MoveResultPayload | GameOverPayload | ErrorPayload;
 }
 
-// Specific message payloads
 export interface MakeMovePayload {
   boardIndex: number;
   cellIndex: number;
-  sequenceNumber?: number; // Optional for backwards compatibility
 }
 
 export interface GameStatePayload {
@@ -63,10 +32,9 @@ export interface GameStatePayload {
   winner?: GameWinner;
   opponentConnected: boolean;
   turnTimeLeftMs?: number; // ms left on the current turn while playing
-  // Optional for backward compatibility; provided when available by server
   yourNickname?: string;
   opponentNickname?: string;
-  moves?: StoredMove[]; // Optional for backward compatibility
+  moves: StoredMove[];
 }
 
 export interface MoveResultPayload {
@@ -87,16 +55,9 @@ export interface GameOverPayload {
 
 export interface QueueStatusPayload {
   position: number;
-  estimatedWaitTime: number;
   playersInQueue: number;
 }
 
-export interface OpponentFoundPayload {
-  gameId: string;
-  yourSymbol: PlayerSymbol;
-}
-
-// Move storage types
 export interface StoredMove {
   notation: string;
   player: PlayerSymbol;
@@ -108,5 +69,4 @@ export interface StoredMove {
 
 export interface ErrorPayload {
   message: string;
-  code?: string;
 }
