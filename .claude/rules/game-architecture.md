@@ -13,6 +13,9 @@ paths:
 4. `connectToGame` opens WebSocket to `/game?gameId=&playerId=&token=`
 5. `GameSession` DO validates one-time token, sends `GAME_STATE`
 6. Disconnect during play: 60s alarm, then remaining player wins by forfeit; session storage wiped 30s after any finish
+7. Turn clock: 90s per move (`TURN_TIMEOUT_MS`), runs only while both are connected; player to move loses with reason `timeout`. Server sends `turnTimeLeftMs` (remaining, not a timestamp, to dodge clock skew)
+8. Refresh rejoins: client keeps `{gameId, playerId, symbol, token}` in sessionStorage (per tab on purpose); token is reusable for the game's life
+9. Matchmaking: both matched players are parked in `matchedPlayers` before the `/init` fetch (requests interleave across that await), so a repeated join returns the same match. Client uses a fresh `playerId` per search so parked entries never leak into a later search. Queue entries not polled for 20s are dropped; tabs also beacon `/queue/leave` on `pagehide`
 
 ## WebSocket Messages
 - Server → Client: `GAME_STATE`, `MOVE_RESULT`, `GAME_OVER`, `ERROR`

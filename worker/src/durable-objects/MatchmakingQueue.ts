@@ -144,6 +144,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			// Check if player is already in queue
 			const existingIndex = this.queue.findIndex((entry) => entry.playerId === playerId);
 			if (existingIndex !== -1) {
+				this.queue[existingIndex].lastSeen = Date.now();
 				// Return current position
 				return new Response(
 					JSON.stringify({
@@ -162,6 +163,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			const queueEntry: QueueEntry = {
 				playerId,
 				joinedAt: Date.now(),
+				lastSeen: Date.now(),
 				nickname: sanitizedNickname,
 			};
 
@@ -280,6 +282,10 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	private matchedPlayers: Map<string, { gameId: string; symbol: 'X' | 'O'; token: string; matchedAt: number }> = new Map();
 
 	private async tryMatch(requestingPlayerId: string): Promise<{ gameId: string; yourSymbol: string; connectToken: string } | null> {
+		// A closed or refreshed tab never calls /leave; don't pair anyone with its ghost
+		const cutoff = Date.now() - 20_000;
+		this.queue = this.queue.filter((entry) => entry.lastSeen > cutoff);
+
 		if (this.queue.length < 2) {
 			return null;
 		}
@@ -295,7 +301,18 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		const tokenPlayer1 = crypto.randomUUID();
 		const tokenPlayer2 = crypto.randomUUID();
 
-		// Create game session
+		// Park both players, so a repeated join (e.g. the client dropped this response)
+		// still finds the match; clients use a fresh playerId per search, so a parked
+		// entry never leaks into a later search. Park before awaiting: other requests
+		// interleave during the session fetch, and a poll that finds neither queue nor
+		// match entry would re-queue that player into a second game.
+		const matchedAt = Date.now();
+		const parked = [
+			{ entry: player1, info: { gameId, symbol: 'X' as const, token: tokenPlayer1, matchedAt } },
+			{ entry: player2, info: { gameId, symbol: 'O' as const, token: tokenPlayer2, matchedAt } },
+		];
+		for (const { entry, info } of parked) this.matchedPlayers.set(entry.playerId, info);
+
 		try {
 			await this.createGameSession(
 				gameId,
@@ -313,11 +330,6 @@ export class MatchmakingQueue extends DurableObject<Env> {
 				}
 			);
 
-			// Store match info for both players with timestamps
-			const matchedAt = Date.now();
-			this.matchedPlayers.set(player1.playerId, { gameId, symbol: 'X', token: tokenPlayer1, matchedAt });
-			this.matchedPlayers.set(player2.playerId, { gameId, symbol: 'O', token: tokenPlayer2, matchedAt });
-
 			// Return match info for the requesting player
 			const requestingPlayerSymbol = requestingPlayerId === player1.playerId ? 'X' : 'O';
 			const connectToken = requestingPlayerId === player1.playerId ? tokenPlayer1 : tokenPlayer2;
@@ -328,7 +340,8 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			};
 		} catch (error) {
 			// If game creation fails, put players back in queue
-			this.queue.unshift(player2, player1);
+			for (const { entry } of parked) this.matchedPlayers.delete(entry.playerId);
+			this.queue.unshift(player1, player2);
 			throw error;
 		}
 	}

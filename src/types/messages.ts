@@ -62,6 +62,7 @@ export interface GameStatePayload {
   status: GameStatus;
   winner?: GameWinner;
   opponentConnected: boolean;
+  turnTimeLeftMs?: number; // ms left on the current turn while playing
   // Optional for backward compatibility; provided when available by server
   yourNickname?: string;
   opponentNickname?: string;
@@ -75,6 +76,7 @@ export interface MoveResultPayload {
   gameStatus: GameStatus;
   error?: string;
   move?: StoredMove; // The move that was just made
+  turnTimeLeftMs?: number; // ms left on the current turn while playing
 }
 
 export interface GameOverPayload {

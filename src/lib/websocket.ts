@@ -41,7 +41,6 @@ export class GameWebSocket {
       this.ws = new WebSocket(this.config.url);
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected");
         this.setStatus("connected");
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
@@ -58,7 +57,6 @@ export class GameWebSocket {
       };
 
       this.ws.onclose = (event) => {
-        console.log("WebSocket closed:", event.code, event.reason);
         this.ws = null;
 
         if (
@@ -94,7 +92,6 @@ export class GameWebSocket {
 
   send(message: ClientMessage): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("WebSocket not connected, cannot send message:", message);
       return false;
     }
 
@@ -139,12 +136,7 @@ export class GameWebSocket {
     this.reconnectAttempts++;
     this.setStatus("connecting");
 
-    setTimeout(() => {
-      console.log(
-        `Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
-      );
-      this.connect();
-    }, this.reconnectDelay);
+    setTimeout(() => this.connect(), this.reconnectDelay);
 
     // Exponential backoff
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
@@ -261,6 +253,11 @@ export class GameAPIClient {
       }
       throw error;
     }
+  }
+
+  // fetch can be cancelled mid-unload; a beacon is delivered after the page is gone
+  leaveQueueOnUnload(playerId: string): void {
+    navigator.sendBeacon(`${this.baseUrl}/queue/leave`, JSON.stringify({ playerId }));
   }
 
   getWebSocketUrl(gameId: string, playerId: string, token?: string): string {

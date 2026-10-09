@@ -19,6 +19,7 @@ import {
   usePlayerNickname,
   useDisconnectFromGame,
   useFindOnlineGame,
+  useTurnDeadline,
 } from "../store/gameStore";
 
 export const GameScreen: React.FC = () => {
@@ -158,6 +159,7 @@ export const GameScreen: React.FC = () => {
             >
               VS
             </span>
+            {isOnline && !isFinished && <TurnClock />}
           </div>
 
           {/* O player card */}
@@ -253,12 +255,12 @@ export const GameScreen: React.FC = () => {
                           ? "YOU LOSE"
                           : `${winnerName} WINS`
                       : `${winnerName} WINS`}
-                    {gameOverReason === "forfeit" && (
+                    {(gameOverReason === "forfeit" || gameOverReason === "timeout") && (
                       <span
                         className="ml-2 text-xs font-medium tracking-wide normal-case"
                         style={{ color: "var(--text-dim)" }}
                       >
-                        by forfeit
+                        {gameOverReason === "forfeit" ? "by forfeit" : "on time"}
                       </span>
                     )}
                   </span>
@@ -557,5 +559,30 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
         )}
       </div>
     </div>
+  );
+};
+
+const TurnClock: React.FC = () => {
+  const deadline = useTurnDeadline();
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (deadline === null) return null;
+  const secondsLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+  const low = secondsLeft <= 15;
+
+  return (
+    <span
+      className="text-xs font-bold tabular-nums mt-1"
+      style={{ color: low ? "#ef4444" : "var(--text-dim)" }}
+      role="timer"
+      aria-label={`${secondsLeft} seconds left for this turn`}
+    >
+      {secondsLeft}s
+    </span>
   );
 };

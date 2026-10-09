@@ -138,6 +138,12 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
     };
   }, [playerId, playerNickname, onGameFound, apiClient]);
 
+  useEffect(() => {
+    const leave = () => apiClient.leaveQueueOnUnload(playerId);
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [playerId, apiClient]);
+
   const handleCancel = async () => {
     try {
       await apiClient.leaveQueue(playerId);

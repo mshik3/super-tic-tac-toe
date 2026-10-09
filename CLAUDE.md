@@ -11,6 +11,7 @@ npm run deploy:pages     # manual Pages upload; normally push to main and Pages 
 # Worker
 cd worker
 npm run dev              # wrangler dev (local)
+npm run smoke            # ~3 min multiplayer regression check; needs `npm run dev` running
 npm run deploy           # deploy to Cloudflare
 ```
 
@@ -32,5 +33,5 @@ npm run deploy           # deploy to Cloudflare
 
 ## Known Limitations
 - No rematch flow — players must find new match after game ends
-- No disconnect countdown UI — worker waits 10min before cleanup (intentionally lenient for MVP)
-- Nickname not persisted — refreshing resets it
+- Disconnect banner says 60s but shows no live countdown (the turn clock is live)
+- Games are created as `playing`, not `waiting` — the `waiting` branches in `GameSession` never run

@@ -90,6 +90,7 @@ export const SubBoard: React.FC<SubBoardProps> = React.memo(
           <Cell
             key={`${boardIndex}-${cellIndex}`}
             value={cell}
+            cellIndex={cellIndex}
             onClick={() => onCellClick(boardIndex, cellIndex)}
             isValidMove={isValidMove(cellIndex)}
             disabled={disabled || isCompleted}

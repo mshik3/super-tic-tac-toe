@@ -1,5 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { getNicknameRuleHint, validateNickname } from "../utils/nickname";
+import {
+  getNicknameRuleHint,
+  loadSavedNickname,
+  validateNickname,
+} from "../utils/nickname";
 
 export interface MainMenuProps {
   onPlayLocal: () => void;
@@ -10,7 +14,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onPlayLocal,
   onPlayOnline,
 }) => {
-  const [nickname, setNickname] = useState("");
+  const [nickname, setNickname] = useState(() => loadSavedNickname() ?? "");
   const [touched, setTouched] = useState(false);
 
   const validation = useMemo(() => validateNickname(nickname), [nickname]);

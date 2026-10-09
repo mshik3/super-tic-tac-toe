@@ -4,6 +4,7 @@ import { clsx } from "clsx";
 
 interface CellProps {
   value: CellType;
+  cellIndex: number;
   onClick: () => void;
   isValidMove: boolean;
   disabled?: boolean;
@@ -13,6 +14,7 @@ interface CellProps {
 export const Cell: React.FC<CellProps> = React.memo(
   ({
     value,
+    cellIndex,
     onClick,
     isValidMove,
     disabled = false,
@@ -41,7 +43,7 @@ export const Cell: React.FC<CellProps> = React.memo(
         onClick={handleClick}
         disabled={disabled || !isValidMove}
         type="button"
-        aria-label={`Cell ${value ? `occupied by ${value}` : "empty"}`}
+        aria-label={`Cell ${cellIndex + 1}, ${value ?? "empty"}`}
       >
         {value && (
           <span className="font-bold leading-none select-none">{value}</span>

@@ -30,10 +30,8 @@ export default {
 					if (!allowed) continue;
 					if (allowed.includes('*')) {
 						const allowedUrl = new URL(allowed.replace('*.', 'subdomain.'));
-						if (
-							incomingUrl.protocol === allowedUrl.protocol &&
-							incomingUrl.hostname.endsWith(allowedUrl.hostname.replace('subdomain.', ''))
-						) {
+						const suffix = allowedUrl.hostname.replace('subdomain.', '.');
+						if (incomingUrl.protocol === allowedUrl.protocol && incomingUrl.hostname.endsWith(suffix)) {
 							return incoming;
 						}
 					} else if (incoming === allowed) {

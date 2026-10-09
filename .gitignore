@@ -34,4 +34,4 @@ dist-ssr
 
 # OS generated files (macOS)
 .DS_Store
-._*
+._*.playwright-mcp/

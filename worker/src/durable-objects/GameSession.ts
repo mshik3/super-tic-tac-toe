@@ -15,12 +15,15 @@ import type {
 import { createNewGame, applyMove, createMove } from '../lib/gameEngine';
 import { moveToChessNotation } from '../lib/chessNotation';
 
+const TURN_TIMEOUT_MS = 90_000;
+
 export class GameSession extends DurableObject<Env> {
 	private gameState: GameState | null = null;
 	private players: Map<string, PlayerConnection> = new Map();
 	private gameId: string = '';
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
 	private moves: StoredMove[] = [];
+	private turnDeadline = 0; // epoch ms when the current player loses on time
 	private playerSequenceNumbers: Map<string, number> = new Map(); // Track expected sequence numbers per player
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
 
@@ -29,13 +32,14 @@ export class GameSession extends DurableObject<Env> {
 	}
 
 	private async persist(): Promise<void> {
-		await this.ctx.storage.put({ moves: this.moves, gameState: this.gameState });
+		await this.ctx.storage.put({ moves: this.moves, gameState: this.gameState, turnDeadline: this.turnDeadline });
 	}
 
 	private async initializeGameSession(gameId: string): Promise<void> {
 		this.gameId = gameId;
 		this.moves = (await this.ctx.storage.get<StoredMove[]>('moves')) ?? [];
 		this.gameState = (await this.ctx.storage.get<GameState>('gameState')) ?? createNewGame(gameId);
+		this.turnDeadline = (await this.ctx.storage.get<number>('turnDeadline')) ?? 0;
 	}
 
 	// Security: Rate limiting for moves to prevent spam
@@ -147,8 +151,14 @@ export class GameSession extends DurableObject<Env> {
 			let playerSymbol: PlayerSymbol = allowed.symbol;
 
 			if (existingPlayer) {
-				// Player is reconnecting - preserve their symbol and update connection
+				// Player is reconnecting - preserve their symbol and update connection.
+				// Close the replaced socket so a stale tab can't keep playing.
 				playerSymbol = existingPlayer.symbol;
+				try {
+					existingPlayer.websocket.close(1000, 'Replaced by new connection');
+				} catch {
+					// already closed
+				}
 				existingPlayer.websocket = server;
 				existingPlayer.connected = true;
 				existingPlayer.lastPing = Date.now();
@@ -181,16 +191,19 @@ export class GameSession extends DurableObject<Env> {
 			});
 
 			// Set up WebSocket close handler
+			// The close of a replaced socket can land after the reconnect; only the
+			// current socket closing means the player is gone.
 			server.addEventListener('close', () => {
-				this.handlePlayerDisconnect(playerId);
+				if (this.players.get(playerId)?.websocket === server) this.handlePlayerDisconnect(playerId);
 			});
 
 			if (this.players.size >= 2 && this.gameState!.status === 'waiting') {
 				this.gameState!.status = 'playing';
 				await this.persist();
 			}
-			this.broadcastGameState();
+			// updateAlarm starts the turn clock once both players are in, so run it first
 			await this.updateAlarm();
+			this.broadcastGameState();
 
 			return new Response(null, {
 				status: 101,
@@ -356,6 +369,7 @@ export class GameSession extends DurableObject<Env> {
 		};
 
 		this.moves.push(storedMove);
+		this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 		await this.persist();
 
 		// Update sequence number tracking for this player
@@ -370,6 +384,7 @@ export class GameSession extends DurableObject<Env> {
 			currentPlayer: this.gameState.currentPlayer,
 			gameStatus: this.gameState.status,
 			move: storedMove,
+			turnTimeLeftMs: this.turnTimeLeftMs(),
 		};
 
 		this.broadcast({
@@ -389,9 +404,19 @@ export class GameSession extends DurableObject<Env> {
 				type: 'GAME_OVER',
 				payload: gameOverPayload,
 			});
-
-			await this.updateAlarm();
 		}
+
+		// While someone is dropped, keep their 60s forfeit clock instead of restarting it
+		if (this.gameState.status === 'finished' || this.allConnected()) await this.updateAlarm();
+	}
+
+	private allConnected() {
+		return this.players.size === 2 && [...this.players.values()].every((p) => p.connected);
+	}
+
+	private turnTimeLeftMs() {
+		// Clock hasn't started until both players have connected once
+		return this.gameState?.status === 'playing' && this.turnDeadline ? Math.max(0, this.turnDeadline - Date.now()) : undefined;
 	}
 
 	private async handlePlayerDisconnect(playerId: string) {
@@ -402,16 +427,16 @@ export class GameSession extends DurableObject<Env> {
 		await this.updateAlarm();
 	}
 
-	// Alarm policy: no alarm while a game is in progress with everyone connected.
-	// Finished games are wiped after 30s. Otherwise (waiting for a player, or
-	// someone dropped) the alarm fires in 60s: a lone connected player wins by
-	// forfeit, an empty session is wiped.
+	// Alarm policy: finished games are wiped after 30s. A game in progress with
+	// both players connected runs the turn clock: the player to move loses at
+	// turnDeadline. Otherwise (waiting for a player, or someone dropped) the alarm
+	// fires in 60s: a lone connected player wins by forfeit, an empty session is wiped.
 	private async updateAlarm() {
-		const allConnected = [...this.players.values()].every((p) => p.connected);
 		if (this.gameState?.status === 'finished') {
 			await this.ctx.storage.setAlarm(Date.now() + 30_000);
-		} else if (this.gameState?.status === 'playing' && allConnected) {
-			await this.ctx.storage.deleteAlarm();
+		} else if (this.gameState?.status === 'playing' && this.allConnected()) {
+			if (!this.turnDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+			await this.ctx.storage.setAlarm(this.turnDeadline);
 		} else {
 			await this.ctx.storage.setAlarm(Date.now() + 60_000);
 		}
@@ -419,11 +444,21 @@ export class GameSession extends DurableObject<Env> {
 
 	async alarm() {
 		const connected = [...this.players.values()].filter((p) => p.connected);
-		if (this.gameState?.status === 'playing' && connected.length === 1) {
+		if (this.gameState?.status === 'playing' && connected.length > 0) {
+			const timedOut = connected.length === 2;
+			if (timedOut && Date.now() < this.turnDeadline) {
+				await this.updateAlarm();
+				return;
+			}
+			const loser = this.gameState.currentPlayer;
 			this.gameState.status = 'finished';
-			this.gameState.winner = connected[0].symbol;
+			this.gameState.winner = timedOut ? (loser === 'X' ? 'O' : 'X') : connected[0].symbol;
 			await this.persist();
-			const payload: GameOverPayload = { winner: this.gameState.winner, reason: 'forfeit', finalBoard: this.gameState.board };
+			const payload: GameOverPayload = {
+				winner: this.gameState.winner,
+				reason: timedOut ? 'timeout' : 'forfeit',
+				finalBoard: this.gameState.board,
+			};
 			this.broadcast({ type: 'GAME_OVER', payload });
 			await this.updateAlarm();
 			return;
@@ -463,6 +498,7 @@ export class GameSession extends DurableObject<Env> {
 			status: this.gameState.status,
 			winner: this.gameState.winner,
 			opponentConnected: this.getOpponentConnected(playerId),
+			turnTimeLeftMs: this.turnTimeLeftMs(),
 			yourNickname: this.allowedPlayers.get(playerId)?.nickname,
 			opponentNickname: this.getOpponentNickname(playerId),
 			moves: this.moves,
@@ -478,16 +514,6 @@ export class GameSession extends DurableObject<Env> {
 		this.players.forEach((_, playerId) => {
 			this.sendGameStateToPlayer(playerId);
 		});
-	}
-
-	private getConnectedPlayerCount(): number {
-		let count = 0;
-		for (const player of this.players.values()) {
-			if (player.connected) {
-				count++;
-			}
-		}
-		return count;
 	}
 
 	private getOpponentConnected(playerId: string): boolean {

@@ -19,7 +19,11 @@ import { devtools } from "zustand/middleware";
 import { moveToChessNotation, type GameMove } from "../utils/chessNotation";
 import { GameWebSocket, GameAPIClient } from "../lib/websocket";
 import type { WebSocketStatus } from "../lib/websocket";
-import { validateNickname } from "../utils/nickname";
+import {
+  loadSavedNickname,
+  saveNickname,
+  validateNickname,
+} from "../utils/nickname";
 
 export type GameMode = "local" | "online";
 export type Screen = "menu" | "searching" | "playing";
@@ -56,6 +60,7 @@ interface GameStore {
   opponentConnected: boolean;
   opponentNickname: string | null;
   gameOverReason: GameOverPayload["reason"] | null;
+  turnDeadline: number | null; // local epoch ms when the player to move loses on time
   websocket: GameWebSocket | null;
   apiClient: GameAPIClient;
 
@@ -94,6 +99,37 @@ const generatePlayerId = () => {
   return `player-${hex}`;
 };
 
+// sessionStorage, not localStorage: a refresh rejoins the game, but a second
+// tab must not take over the same seat.
+const SESSION_KEY = "stt-online-session";
+
+interface SavedSession {
+  gameId: string;
+  playerId: string;
+  playerSymbol: PlayerSymbol;
+  connectToken: string;
+}
+
+const loadSession = (): SavedSession | null => {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+};
+
+const saveSession = (session: SavedSession | null) => {
+  try {
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // storage unavailable (private mode): refresh just won't rejoin
+  }
+};
+
+const deadlineFrom = (msLeft?: number) =>
+  msLeft === undefined ? null : Date.now() + msLeft;
+
 // Single store implementation — devtools middleware applied conditionally below.
 // Using `any` for set/get here is intentional: the external API is fully typed
 // by the create<GameStore>() wrapper; the internal Zustand mutator types differ
@@ -111,14 +147,15 @@ const storeImpl = (set: any, get: any): GameStore => ({
 
   gameMode: "local",
 
-  playerId: generatePlayerId(),
-  playerNickname: "Anonymous",
+  playerId: loadSession()?.playerId ?? generatePlayerId(),
+  playerNickname: loadSavedNickname() ?? "Anonymous",
   playerSymbol: null,
   gameId: null,
   connectionStatus: "disconnected",
   opponentConnected: false,
   opponentNickname: null,
   gameOverReason: null,
+  turnDeadline: null,
   websocket: null,
   apiClient: new GameAPIClient(),
 
@@ -276,11 +313,15 @@ const storeImpl = (set: any, get: any): GameStore => ({
       set({ error: result.errors[0] || "Invalid display name" });
       return;
     }
+    saveNickname(result.sanitized);
     set({ playerNickname: result.sanitized, error: null });
   },
 
   findOnlineGame: () => {
     set({
+      // Fresh id per search: the queue keys matches by playerId, so reusing one
+      // could hand back a previous game's match
+      playerId: generatePlayerId(),
       gameMode: "online",
       currentScreen: "searching",
       error: null,
@@ -303,11 +344,22 @@ const storeImpl = (set: any, get: any): GameStore => ({
     const websocket = new GameWebSocket({
       url: wsUrl,
       onMessage: get().handleServerMessage,
-      onStatusChange: (status) => set({ connectionStatus: status }),
+      onStatusChange: (status) => {
+        if (get().websocket !== websocket) return; // replaced socket
+        set({ connectionStatus: status });
+        // Gave up without ever receiving the game (e.g. a rejoin after the
+        // session expired): don't leave the player on an endless spinner.
+        if (status === "disconnected" && !get().gameState) {
+          get().disconnectFromGame();
+        }
+      },
       onError: (error) => set({ error: error.message }),
     });
 
     websocket.connect();
+    if (connectToken) {
+      saveSession({ gameId, playerId, playerSymbol, connectToken });
+    }
 
     set({
       gameId,
@@ -325,8 +377,10 @@ const storeImpl = (set: any, get: any): GameStore => ({
     if (websocket) {
       websocket.disconnect();
     }
+    saveSession(null);
 
     set({
+      turnDeadline: null,
       websocket: null,
       gameId: null,
       playerSymbol: null,
@@ -375,6 +429,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
           playerSymbol: payload.yourSymbol,
           opponentConnected: payload.opponentConnected,
           opponentNickname: payload.opponentNickname ?? null,
+          playerNickname: payload.yourNickname ?? get().playerNickname,
+          turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
           gameOverReason: payload.status === "finished" ? get().gameOverReason : null,
           error: null,
         });
@@ -422,6 +478,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
             gameState: updatedGameState,
             moves: updatedMoves,
             pendingMoves: pendingMoves.slice(0, -1),
+            turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
             error: null,
           });
         } else {
@@ -451,6 +508,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
               board: payload.finalBoard,
             },
             gameOverReason: payload.reason,
+            turnDeadline: null,
           });
         }
         break;
@@ -486,6 +544,7 @@ export const usePlayerId = () => useGameStore((s) => s.playerId);
 export const useOpponentNickname = () => useGameStore((s) => s.opponentNickname);
 export const useGameOverReason = () => useGameStore((s) => s.gameOverReason);
 export const usePlayerNickname = () => useGameStore((s) => s.playerNickname);
+export const useTurnDeadline = () => useGameStore((s) => s.turnDeadline);
 
 export const useStartNewGame = () => useGameStore((s) => s.startNewGame);
 export const useMakeMove = () => useGameStore((s) => s.makeMove);
@@ -496,3 +555,12 @@ export const useSetPlayerNickname = () => useGameStore((s) => s.setPlayerNicknam
 export const useFindOnlineGame = () => useGameStore((s) => s.findOnlineGame);
 export const useConnectToGame = () => useGameStore((s) => s.connectToGame);
 export const useDisconnectFromGame = () => useGameStore((s) => s.disconnectFromGame);
+
+// A refresh mid-game rejoins with the saved seat; the server keeps the
+// session for 60s after a disconnect.
+const savedSession = loadSession();
+if (savedSession) {
+  useGameStore
+    .getState()
+    .connectToGame(savedSession.gameId, savedSession.playerSymbol, savedSession.connectToken);
+}

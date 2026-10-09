@@ -130,3 +130,21 @@ export function validateNickname(rawInput: string | null | undefined): {
 export function getNicknameRuleHint(): string {
   return "3–20 chars; letters, numbers, and spaces only.";
 }
+
+const NICKNAME_KEY = "stt-nickname";
+
+export function loadSavedNickname(): string | null {
+  try {
+    return localStorage.getItem(NICKNAME_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveNickname(nickname: string): void {
+  try {
+    localStorage.setItem(NICKNAME_KEY, nickname);
+  } catch {
+    // storage unavailable: nickname just isn't remembered
+  }
+}
