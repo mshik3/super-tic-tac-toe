@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { GameScreen } from "./components/GameScreen";
 import { MainMenu } from "./components/MainMenu";
 import { MatchmakingScreen } from "./components/MatchmakingScreen";
@@ -9,7 +10,16 @@ import {
   useConnectToGame,
   usePlayerId,
   useDisconnectFromGame,
+  useStartBotGame,
+  useCreatePrivateGame,
+  useJoinPrivateGame,
 } from "./store/gameStore";
+import type { BotLevel } from "./lib/bot";
+
+const readInvite = () => {
+  const id = new URLSearchParams(window.location.search).get("join");
+  return id && /^game-[0-9a-f-]{36}$/.test(id) ? id : null;
+};
 import { useGameStore } from "./store/gameStore";
 
 function App() {
@@ -21,6 +31,26 @@ function App() {
   const playerId = usePlayerId();
   const disconnectFromGame = useDisconnectFromGame();
   const playerNickname = useGameStore((s) => s.playerNickname);
+  const startBotGame = useStartBotGame();
+  const createPrivateGame = useCreatePrivateGame();
+  const joinPrivateGame = useJoinPrivateGame();
+  const [inviteId, setInviteId] = useState(readInvite);
+
+  const clearInvite = () => {
+    window.history.replaceState(null, "", window.location.pathname);
+    setInviteId(null);
+  };
+
+  const handlePlayFriend = async (nickname: string) => {
+    setPlayerNickname(nickname);
+    await createPrivateGame();
+  };
+
+  const handleJoinInvite = async (nickname: string) => {
+    setPlayerNickname(nickname);
+    await joinPrivateGame(inviteId!);
+    clearInvite();
+  };
 
   const handlePlayLocal = () => {
     setGameMode("local");
@@ -51,7 +81,13 @@ function App() {
       </header>
       <main className="flex-1 min-h-0">
         {currentScreen === "menu" ? (
-          <MainMenu onPlayLocal={handlePlayLocal} onPlayOnline={handlePlayOnline} />
+          <MainMenu
+            onPlayLocal={handlePlayLocal}
+            onPlayOnline={handlePlayOnline}
+            onPlayFriend={handlePlayFriend}
+            onPlayBot={(level: BotLevel) => startBotGame(level)}
+            invite={inviteId ? { onJoin: handleJoinInvite, onDismiss: clearInvite } : undefined}
+          />
         ) : currentScreen === "searching" ? (
           <MatchmakingScreen
             playerId={playerId}

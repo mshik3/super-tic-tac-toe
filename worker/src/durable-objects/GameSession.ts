@@ -13,8 +13,13 @@ import type {
 } from '../../../src/types/messages';
 import { createNewGame, applyMove, createMove } from '../../../src/lib/gameEngine';
 import { moveToChessNotation } from '../../../src/utils/chessNotation';
+import { sanitizeNickname } from './MatchmakingQueue';
 
 const TURN_TIMEOUT_MS = 90_000;
+const INVITE_TTL_MS = 30 * 60_000;
+
+const json = (body: unknown, status = 200) =>
+	new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 interface PlayerConnection {
 	symbol: PlayerSymbol;
@@ -54,6 +59,46 @@ export class GameSession extends DurableObject<Env> {
 		this.wins = (await this.ctx.storage.get<Record<string, number>>('wins')) ?? {};
 	}
 
+	// After an eviction or deploy memory is empty; reload what storage has.
+	// Returns false when the session no longer exists.
+	private async restore(): Promise<boolean> {
+		if (this.gameState) return true;
+		const gameState = await this.ctx.storage.get<GameState>('gameState');
+		if (!gameState) return false;
+		await this.initializeGameSession(gameState.gameId);
+		this.allowedPlayers = new Map((await this.ctx.storage.get<[string, { symbol: PlayerSymbol; token: string; nickname?: string }][]>('allowedPlayers')) ?? []);
+		return true;
+	}
+
+	private isWaitingForOpponent() {
+		return this.allowedPlayers.size < 2;
+	}
+
+	// Second seat of a private game, claimed by whoever opens the invite link
+	private async handleJoin(request: Request): Promise<Response> {
+		const bodyText = await request.text();
+		if (bodyText.length > 1024) return json({ error: 'Request too large' }, 400);
+		const { playerId, nickname } = JSON.parse(bodyText) as { playerId: unknown; nickname?: unknown };
+		if (typeof playerId !== 'string' || playerId.length > 100 || !/^[a-zA-Z0-9\-_]+$/.test(playerId)) {
+			return json({ error: 'Invalid request' }, 400);
+		}
+		const cleanNickname = sanitizeNickname(nickname);
+		if (cleanNickname === null) return json({ error: 'Invalid request' }, 400);
+
+		if (!(await this.restore()) || this.allowedPlayers.size === 0) {
+			return json({ error: 'This invite has expired.' }, 404);
+		}
+		const existing = this.allowedPlayers.get(playerId);
+		if (existing) return json({ gameId: this.gameState!.gameId, yourSymbol: existing.symbol, connectToken: existing.token });
+		if (!this.isWaitingForOpponent()) return json({ error: 'This game already has two players.' }, 409);
+
+		const seat = { symbol: 'O' as const, token: crypto.randomUUID(), nickname: cleanNickname };
+		this.allowedPlayers.set(playerId, seat);
+		await this.persist();
+		await this.updateAlarm();
+		return json({ gameId: this.gameState!.gameId, yourSymbol: seat.symbol, connectToken: seat.token });
+	}
+
 	// Security: Rate limiting for moves to prevent spam
 	private checkMoveRateLimit(playerId: string, maxMoves: number = 20, windowMs: number = 10000): boolean {
 		const now = Date.now();
@@ -86,7 +131,7 @@ export class GameSession extends DurableObject<Env> {
 					gameId: string;
 					players: Array<{ id: string; symbol: PlayerSymbol; token: string; nickname?: string }>;
 				};
-				if (!body || typeof body !== 'object' || !body.gameId || !Array.isArray(body.players) || body.players.length !== 2) {
+				if (!body || typeof body !== 'object' || !body.gameId || !Array.isArray(body.players) || (body.players.length !== 1 && body.players.length !== 2)) {
 					return new Response('Invalid init payload', { status: 400 });
 				}
 
@@ -105,6 +150,14 @@ export class GameSession extends DurableObject<Env> {
 				console.error('Failed to initialize session from /init:', error);
 			}
 			return new Response('Invalid request', { status: 400 });
+		}
+
+		if (request.method === 'POST' && url.pathname === '/game/join') {
+			try {
+				return await this.handleJoin(request);
+			} catch {
+				return json({ error: 'Invalid request' }, 400);
+			}
 		}
 
 		// Handle WebSocket upgrade
@@ -257,6 +310,11 @@ export class GameSession extends DurableObject<Env> {
 			return;
 		}
 
+		if (this.isWaitingForOpponent()) {
+			this.sendError(playerId, 'Wait for your friend to join.');
+			return;
+		}
+
 		// Check if it's the player's turn
 		if (gameState.currentPlayer !== player.symbol) {
 			this.sendError(playerId, 'Invalid request');
@@ -396,14 +454,17 @@ export class GameSession extends DurableObject<Env> {
 		this.broadcastGameState();
 	}
 
-	// Alarm policy: finished games are wiped after 30s, or 10min while both
+	// Alarm policy: a private game whose friend hasn't joined expires after
+	// INVITE_TTL_MS. Finished games are wiped after 30s, or 10min while both
 	// players are still there and might rematch. A game in progress with
 	// both players connected runs the turn clock: the player to move loses at
 	// turnDeadline. Otherwise (waiting for a player, or someone dropped) the turn
 	// clock pauses and the alarm fires in 60s: a lone connected player wins by
 	// forfeit, an empty session is wiped.
 	private async updateAlarm() {
-		if (this.gameState?.status === 'finished') {
+		if (this.isWaitingForOpponent()) {
+			await this.ctx.storage.setAlarm(Date.now() + INVITE_TTL_MS);
+		} else if (this.gameState?.status === 'finished') {
 			await this.ctx.storage.setAlarm(Date.now() + (this.allConnected() ? 600_000 : 30_000));
 		} else if (this.gameState?.status === 'playing' && this.allConnected()) {
 			if (this.turnPausedMs !== null) {
@@ -423,6 +484,7 @@ export class GameSession extends DurableObject<Env> {
 	}
 
 	async alarm() {
+		if (!(await this.restore()) || this.isWaitingForOpponent()) return this.destroy();
 		const connected = [...this.players.values()].filter((p) => p.connected);
 		if (this.gameState?.status === 'playing' && connected.length > 0) {
 			const timedOut = connected.length === 2;
@@ -475,6 +537,7 @@ export class GameSession extends DurableObject<Env> {
 			status: this.gameState.status,
 			winner: this.gameState.winner,
 			opponentConnected: this.getOpponentConnected(playerId),
+			waitingForOpponent: this.isWaitingForOpponent(),
 			turnTimeLeftMs: this.turnTimeLeftMs(),
 			opponentForfeitMs:
 				this.gameState.status === 'playing' && !this.getOpponentConnected(playerId) && this.forfeitAt

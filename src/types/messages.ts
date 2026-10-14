@@ -30,6 +30,7 @@ export interface GameStatePayload {
   status: GameStatus;
   winner?: GameWinner;
   opponentConnected: boolean;
+  waitingForOpponent: boolean; // private game whose invite hasn't been used yet
   turnTimeLeftMs?: number; // ms left on the current turn while playing
   opponentForfeitMs?: number; // ms until a dropped opponent forfeits
   yourNickname?: string;

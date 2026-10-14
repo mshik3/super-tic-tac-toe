@@ -23,6 +23,9 @@ import {
   useForfeitDeadline,
   useRematch,
   useRequestRematch,
+  useWaitingForOpponent,
+  useBotLevel,
+  useBotSymbol,
 } from "../store/gameStore";
 
 export const GameScreen: React.FC = () => {
@@ -47,6 +50,9 @@ export const GameScreen: React.FC = () => {
   const score = useScore();
   const rematch = useRematch();
   const requestRematch = useRequestRematch();
+  const waitingForOpponent = useWaitingForOpponent();
+  const botLevel = useBotLevel();
+  const botSymbol = useBotSymbol();
 
   useEffect(() => {
     if (error) {
@@ -60,30 +66,31 @@ export const GameScreen: React.FC = () => {
   }
 
   const isOnline = gameMode === "online";
-  const isMyTurn =
-    !isOnline ||
-    (gameState.status === "playing" &&
-      gameState.currentPlayer === playerSymbol);
+  const isBot = gameMode === "bot";
+  const hasScore = isOnline || isBot;
+  // null in a local game: both sides are "you"
+  const mySymbol = isOnline ? playerSymbol : isBot ? (botSymbol === "X" ? "O" : "X") : null;
+  const isMyTurn = mySymbol === null || gameState.currentPlayer === mySymbol;
 
-  const xName = isOnline
-    ? playerSymbol === "X"
-      ? playerNickname ?? "You"
-      : opponentNickname ?? "Opponent"
-    : "Player X";
+  const opponentName = isBot
+    ? `${botLevel![0].toUpperCase()}${botLevel!.slice(1)} bot`
+    : waitingForOpponent
+      ? "Waiting for friend…"
+      : opponentNickname ?? "Opponent";
+  const myName = isBot ? "You" : playerNickname ?? "You";
+  const nameFor = (symbol: "X" | "O") =>
+    mySymbol === null ? `Player ${symbol}` : symbol === mySymbol ? myName : opponentName;
+  const xName = nameFor("X");
+  const oName = nameFor("O");
 
-  const oName = isOnline
-    ? playerSymbol === "O"
-      ? playerNickname ?? "You"
-      : opponentNickname ?? "Opponent"
-    : "Player O";
-
-  const xIsMe = isOnline && playerSymbol === "X";
-  const oIsMe = isOnline && playerSymbol === "O";
+  const xIsMe = mySymbol === "X";
+  const oIsMe = mySymbol === "O";
   const xWins = xIsMe ? score.you : score.opponent;
   const oWins = xIsMe ? score.opponent : score.you;
 
   const confirmLeave = () =>
     !isOnline ||
+    waitingForOpponent ||
     gameState.status !== "playing" ||
     window.confirm("Leave this game? It counts as a forfeit.");
 
@@ -108,10 +115,8 @@ export const GameScreen: React.FC = () => {
         ? xName
         : oName;
 
-  const iWon =
-    isOnline && winner !== "draw" && winner !== null && winner === playerSymbol;
-  const iLost =
-    isOnline && winner !== "draw" && winner !== null && winner !== playerSymbol;
+  const iWon = mySymbol !== null && winner === mySymbol;
+  const iLost = mySymbol !== null && winner !== "draw" && winner !== null && winner !== mySymbol;
 
   const resultText =
     winner === "draw"
@@ -129,30 +134,34 @@ export const GameScreen: React.FC = () => {
           <PlayerCard
             symbol="X"
             name={xName}
-            isActive={gameState.status === "playing" && gameState.currentPlayer === "X"}
+            isActive={!waitingForOpponent && gameState.status === "playing" && gameState.currentPlayer === "X"}
             isMe={xIsMe}
             isOnline={isOnline}
+            thinking={isBot && botSymbol === "X"}
             connected={xIsMe ? connectionStatus === "connected" : opponentConnected}
             side="left"
           />
           <div className="shrink-0 flex flex-col items-center justify-center px-3 md:px-6 border-x border-line bg-strip font-mono">
             <span className="text-sm font-bold" aria-label="Series score">
-              {isOnline ? `${xWins}–${oWins}` : "vs"}
+              {hasScore ? `${xWins}–${oWins}` : "vs"}
             </span>
             {isOnline && !isFinished && <TurnClock />}
           </div>
           <PlayerCard
             symbol="O"
             name={oName}
-            isActive={gameState.status === "playing" && gameState.currentPlayer === "O"}
+            isActive={!waitingForOpponent && gameState.status === "playing" && gameState.currentPlayer === "O"}
             isMe={oIsMe}
             isOnline={isOnline}
+            thinking={isBot && botSymbol === "O"}
             connected={oIsMe ? connectionStatus === "connected" : opponentConnected}
             side="right"
           />
         </div>
 
-        {isOnline && !isFinished && !opponentConnected && gameState.status === "playing" && (
+        {isOnline && waitingForOpponent && <InviteLink gameId={gameState.gameId} />}
+
+        {isOnline && !waitingForOpponent && !isFinished && !opponentConnected && gameState.status === "playing" && (
           <div className="px-3 py-1.5 text-center text-xs bg-warn-soft border-t border-warn-line text-warn">
             <ForfeitCountdown />
           </div>
@@ -221,7 +230,7 @@ export const GameScreen: React.FC = () => {
             <GameBoard
               gameState={gameState}
               onMove={makeMove}
-              disabled={!isMyTurn || isFinished}
+              disabled={!isMyTurn || isFinished || (isOnline && waitingForOpponent)}
               currentPlayer={gameState.currentPlayer}
             />
 
@@ -285,6 +294,7 @@ interface PlayerCardProps {
   isActive: boolean;
   isMe: boolean;
   isOnline: boolean;
+  thinking?: boolean;
   connected: boolean | undefined;
   side: "left" | "right";
 }
@@ -295,6 +305,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
   isActive,
   isMe,
   isOnline,
+  thinking,
   connected,
   side,
 }) => {
@@ -323,9 +334,41 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
             />
           )}
           <span className="font-bold truncate">{name}</span>
-          {isMe && isOnline && <span className="text-xs text-muted">(you)</span>}
+          {isMe && isOnline && <span className="hidden md:inline text-xs text-muted">(you)</span>}
         </span>
-        <span className="text-xs text-muted">{isActive ? "to move" : " "}</span>
+        <span className="text-xs text-muted">{isActive ? (thinking ? "thinking…" : "to move") : "\u00a0"}</span>
+      </div>
+    </div>
+  );
+};
+
+const InviteLink: React.FC<{ gameId: string }> = ({ gameId }) => {
+  const [copied, setCopied] = useState(false);
+  const link = `${window.location.origin}${window.location.pathname}?join=${gameId}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch {
+      // clipboard blocked: the link is selectable in the field
+    }
+  };
+
+  return (
+    <div className="px-3 py-2 border-t border-line bg-strip flex flex-col items-center gap-1.5 text-xs">
+      <p>Send this link to a friend. The game starts when they open it.</p>
+      <div className="flex gap-2 w-full max-w-md">
+        <input
+          readOnly
+          value={link}
+          onFocus={(e) => e.target.select()}
+          aria-label="Invite link"
+          className="field font-mono text-xs py-1"
+        />
+        <button onClick={copy} className="btn-primary shrink-0">
+          {copied ? "Copied" : "Copy link"}
+        </button>
       </div>
     </div>
   );

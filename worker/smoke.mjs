@@ -56,6 +56,31 @@ async function match() {
   await fetch(`${BASE}/queue/leave`, { method: 'POST', body: JSON.stringify({ playerId: real }) });
 }
 
+// F: a private game waits for its friend, admits exactly one, and expired links say so
+{
+  const host = id(), friend = id();
+  const post = (path, body) => fetch(`${BASE}${path}`, { method: 'POST', body: JSON.stringify(body) });
+  const seat = await (await post('/queue/private', { playerId: host, nickname: 'Host' })).json();
+  const wh = await open(seat.gameId, host, seat.connectToken);
+  await sleep(200);
+  wh.send(JSON.stringify({ type: 'MAKE_MOVE', payload: { boardIndex: 4, cellIndex: 4 } }));
+  await sleep(200);
+  const waiting = lastState(wh)?.waitingForOpponent;
+  const blocked = wh.msgs.some((m) => m.type === 'ERROR');
+  console.log('F waiting shown, moves blocked:', waiting && blocked ? 'ok' : `BUG (waiting ${waiting}, blocked ${blocked})`);
+
+  const joined = await post(`/game/join?gameId=${seat.gameId}`, { playerId: friend, nickname: 'Friend' });
+  const fs = await joined.json();
+  const late = await post(`/game/join?gameId=${seat.gameId}`, { playerId: id(), nickname: 'Late' });
+  const gone = await post(`/game/join?gameId=game-${crypto.randomUUID()}`, { playerId: id(), nickname: 'Lost' });
+  console.log('F join rules:', fs.yourSymbol === 'O' && late.status === 409 && gone.status === 404 ? 'ok' : `BUG (${fs.yourSymbol} ${late.status} ${gone.status})`);
+
+  const wf = await open(fs.gameId, friend, fs.connectToken);
+  await sleep(300);
+  console.log('F friend joins:', lastState(wh)?.waitingForOpponent === false && lastState(wh)?.opponentNickname === 'Friend' ? 'ok' : 'BUG');
+  wh.close(); wf.close();
+}
+
 // C: the player to move loses on time; a move restarts the clock
 const mc = await match();
 const c = (async () => {

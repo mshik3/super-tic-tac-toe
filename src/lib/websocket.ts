@@ -122,6 +122,12 @@ export class GameWebSocket {
   }
 }
 
+interface GameSeat {
+  gameId: string;
+  yourSymbol: "X" | "O";
+  connectToken: string;
+}
+
 type JoinQueueResult =
   | { matched: true; gameId: string; yourSymbol: "X" | "O"; connectToken: string }
   | ({ matched: false } & QueueStatusPayload);
@@ -150,6 +156,11 @@ export class GameAPIClient {
       throw new Error("The server is having trouble. Try again in a minute.");
     }
     if (!response.ok) {
+      // Expired or full invites come back with a message meant for the player
+      const body = await response.json().catch(() => null);
+      if ((response.status === 404 || response.status === 409) && body?.error) {
+        throw new Error(body.error);
+      }
       throw new Error(`Request failed (${response.status}).`);
     }
     return response.json();
@@ -157,6 +168,14 @@ export class GameAPIClient {
 
   joinQueue(playerId: string, nickname?: string): Promise<JoinQueueResult> {
     return this.post("/queue/join", { playerId, nickname });
+  }
+
+  createPrivateGame(playerId: string, nickname: string): Promise<GameSeat> {
+    return this.post("/queue/private", { playerId, nickname });
+  }
+
+  joinPrivateGame(gameId: string, playerId: string, nickname: string): Promise<GameSeat> {
+    return this.post(`/game/join?gameId=${encodeURIComponent(gameId)}`, { playerId, nickname });
   }
 
   leaveQueue(playerId: string): Promise<{ success: boolean; playersInQueue: number }> {

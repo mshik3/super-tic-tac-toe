@@ -13,13 +13,14 @@ import { devtools } from "zustand/middleware";
 import { moveToChessNotation, type GameMove } from "../utils/chessNotation";
 import { GameWebSocket, GameAPIClient } from "../lib/websocket";
 import type { WebSocketStatus } from "../lib/websocket";
+import type { BotLevel } from "../lib/bot";
 import {
   loadSavedNickname,
   saveNickname,
   validateNickname,
 } from "../utils/nickname";
 
-export type GameMode = "local" | "online";
+export type GameMode = "local" | "online" | "bot";
 export type Screen = "menu" | "searching" | "playing";
 
 interface GameStore {
@@ -42,6 +43,7 @@ interface GameStore {
   gameId: string | null;
   connectionStatus: WebSocketStatus;
   opponentConnected: boolean;
+  waitingForOpponent: boolean; // private game whose friend hasn't joined yet
   opponentNickname: string | null;
   gameOverReason: GameOverPayload["reason"] | null;
   turnDeadline: number | null; // local epoch ms when the player to move loses on time
@@ -51,9 +53,15 @@ interface GameStore {
   websocket: GameWebSocket | null;
   apiClient: GameAPIClient;
 
+  // Playing the computer
+  botLevel: BotLevel | null;
+  botSymbol: PlayerSymbol;
+
   // Actions
   startNewGame: () => void;
-  makeMove: (boardIndex: number, cellIndex: number) => void;
+  makeMove: (boardIndex: number, cellIndex: number, byBot?: boolean) => void;
+  startBotGame: (level: BotLevel) => void;
+  playBotTurn: () => void;
   resetCurrentGame: () => void;
   clearError: () => void;
 
@@ -61,6 +69,8 @@ interface GameStore {
   setGameMode: (mode: GameMode) => void;
   setPlayerNickname: (nickname: string) => void;
   findOnlineGame: () => void;
+  createPrivateGame: () => Promise<void>;
+  joinPrivateGame: (gameId: string) => Promise<void>;
   connectToGame: (
     gameId: string,
     playerSymbol: PlayerSymbol,
@@ -101,6 +111,8 @@ const saveSession = (session: SavedSession | null) => {
   }
 };
 
+let botWorker: Worker | null = null;
+
 const deadlineFrom = (msLeft?: number) =>
   msLeft === undefined ? null : Date.now() + msLeft;
 
@@ -125,6 +137,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
   gameId: null,
   connectionStatus: "disconnected",
   opponentConnected: false,
+  waitingForOpponent: false,
   opponentNickname: null,
   gameOverReason: null,
   turnDeadline: null,
@@ -133,6 +146,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
   rematch: { you: false, opponent: false },
   websocket: null,
   apiClient: new GameAPIClient(),
+  botLevel: null,
+  botSymbol: "O",
 
   // ─── Local game actions ────────────────────────────────────────────────────
 
@@ -148,8 +163,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
     });
   },
 
-  makeMove: (boardIndex: number, cellIndex: number) => {
-    const { gameState, moves, pendingMoves, gameMode, websocket, playerSymbol } =
+  makeMove: (boardIndex: number, cellIndex: number, byBot = false) => {
+    const { gameState, moves, pendingMoves, gameMode, websocket, playerSymbol, botSymbol, score } =
       get();
 
     if (!gameState) {
@@ -161,6 +176,9 @@ const storeImpl = (set: any, get: any): GameStore => ({
       set({ error: "This game is over." });
       return;
     }
+
+    // Clicks during the bot's turn are ignored, and the bot only moves on its own
+    if (gameMode === "bot" && (gameState.currentPlayer === botSymbol) !== byBot) return;
 
     const online = gameMode === "online" && websocket;
     if (online && gameState.currentPlayer !== playerSymbol) {
@@ -183,12 +201,23 @@ const storeImpl = (set: any, get: any): GameStore => ({
       timestamp: move.timestamp,
     };
 
+    const winner = result.newGameState!.winner;
     set({
       gameState: result.newGameState,
       moves: [...moves, gameMove],
       pendingMoves: online ? pendingMoves + 1 : pendingMoves,
       error: null,
+      ...(gameMode === "bot" && winner && winner !== "draw"
+        ? {
+            score:
+              winner === botSymbol
+                ? { ...score, opponent: score.opponent + 1 }
+                : { ...score, you: score.you + 1 },
+          }
+        : {}),
     });
+
+    if (gameMode === "bot") get().playBotTurn();
 
     // Online: the update above is optimistic; roll back if the send fails
     if (online && !websocket.send({ type: "MAKE_MOVE", payload: { boardIndex, cellIndex } })) {
@@ -201,8 +230,53 @@ const storeImpl = (set: any, get: any): GameStore => ({
     }
   },
 
+  startBotGame: (level: BotLevel) => {
+    set({
+      gameState: createNewGame(`bot-${Date.now()}`),
+      moves: [],
+      error: null,
+      currentScreen: "playing",
+      gameMode: "bot",
+      botLevel: level,
+      botSymbol: "O",
+      score: { you: 0, opponent: 0 },
+    });
+  },
+
+  playBotTurn: () => {
+    const { gameState, gameMode, botLevel, botSymbol } = get();
+    if (gameMode !== "bot" || !botLevel || gameState?.status !== "playing") return;
+    if (gameState.currentPlayer !== botSymbol) return;
+
+    const started = Date.now();
+    botWorker ??= new Worker(new URL("../lib/bot.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    botWorker.onmessage = (e: MessageEvent<{ boardIndex: number; cellIndex: number }>) => {
+      // An instant reply reads as if the click didn't register
+      const wait = Math.max(0, 400 - (Date.now() - started));
+      setTimeout(() => {
+        if (get().gameState !== gameState) return; // left or restarted meanwhile
+        get().makeMove(e.data.boardIndex, e.data.cellIndex, true);
+      }, wait);
+    };
+    botWorker.postMessage({ state: gameState, level: botLevel });
+  },
+
   resetCurrentGame: () => {
-    const { gameState, gameMode } = get();
+    const { gameState, gameMode, botSymbol } = get();
+
+    if (gameMode === "bot") {
+      // Swap sides each game so you also get to play second
+      set({
+        gameState: createNewGame(`bot-${Date.now()}`),
+        moves: [],
+        error: null,
+        botSymbol: botSymbol === "X" ? "O" : "X",
+      });
+      get().playBotTurn();
+      return;
+    }
 
     if (gameMode === "online") {
       get().disconnectFromGame();
@@ -247,6 +321,20 @@ const storeImpl = (set: any, get: any): GameStore => ({
       currentScreen: "searching",
       error: null,
     });
+  },
+
+  createPrivateGame: async () => {
+    const playerId = generatePlayerId();
+    set({ playerId, error: null });
+    const seat = await get().apiClient.createPrivateGame(playerId, get().playerNickname);
+    get().connectToGame(seat.gameId, seat.yourSymbol, seat.connectToken);
+  },
+
+  joinPrivateGame: async (gameId: string) => {
+    const playerId = generatePlayerId();
+    set({ playerId, error: null });
+    const seat = await get().apiClient.joinPrivateGame(gameId, playerId, get().playerNickname);
+    get().connectToGame(seat.gameId, seat.yourSymbol, seat.connectToken);
   },
 
   connectToGame: (
@@ -310,10 +398,13 @@ const storeImpl = (set: any, get: any): GameStore => ({
       moves: [],
       connectionStatus: "disconnected",
       opponentConnected: false,
+      waitingForOpponent: false,
       opponentNickname: null,
       gameOverReason: null,
       currentScreen: "menu",
       gameMode: "local",
+      botLevel: null,
+      botSymbol: "O",
       error: null,
     });
   },
@@ -345,6 +436,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
           pendingMoves: 0,
           playerSymbol: payload.yourSymbol,
           opponentConnected: payload.opponentConnected,
+          waitingForOpponent: payload.waitingForOpponent,
           opponentNickname: payload.opponentNickname ?? null,
           playerNickname: payload.yourNickname ?? get().playerNickname,
           turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
@@ -468,6 +560,12 @@ export const useTurnDeadline = () => useGameStore((s) => s.turnDeadline);
 export const useForfeitDeadline = () => useGameStore((s) => s.forfeitDeadline);
 export const useScore = () => useGameStore((s) => s.score);
 export const useRematch = () => useGameStore((s) => s.rematch);
+export const useWaitingForOpponent = () => useGameStore((s) => s.waitingForOpponent);
+export const useBotLevel = () => useGameStore((s) => s.botLevel);
+export const useBotSymbol = () => useGameStore((s) => s.botSymbol);
+export const useStartBotGame = () => useGameStore((s) => s.startBotGame);
+export const useCreatePrivateGame = () => useGameStore((s) => s.createPrivateGame);
+export const useJoinPrivateGame = () => useGameStore((s) => s.joinPrivateGame);
 export const useRequestRematch = () => useGameStore((s) => s.requestRematch);
 
 export const useStartNewGame = () => useGameStore((s) => s.startNewGame);

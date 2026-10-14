@@ -27,7 +27,7 @@ export const Cell: React.FC<CellProps> = React.memo(
         className={clsx("game-cell", {
           x: value === "X",
           o: value === "O",
-          playable: isValidMove || value !== null,
+          playable: isValidMove,
           "x-valid": canPlay && currentPlayer === "X",
           "o-valid": canPlay && currentPlayer === "O",
         })}

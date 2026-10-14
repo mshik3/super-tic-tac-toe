@@ -24,7 +24,7 @@ const isValidPlayerId = (id: unknown): id is string => typeof id === 'string' &&
 const BLOCKED_WORDS = ['fuck', 'shit', 'bitch', 'asshole', 'dick', 'cunt', 'pussy', 'slut', 'whore', 'porn', 'xxx'];
 
 // Ascii letters/digits/spaces, 3-20 chars, basic profanity. undefined = no nickname given, null = rejected.
-function sanitizeNickname(nickname: unknown): string | undefined | null {
+export function sanitizeNickname(nickname: unknown): string | undefined | null {
 	if (typeof nickname !== 'string' || !nickname.trim()) return undefined;
 	const trimmed = nickname.trim();
 	if (!/^[A-Za-z0-9 ]{3,20}$/.test(trimmed)) return null;
@@ -37,13 +37,28 @@ export class MatchmakingQueue extends DurableObject<Env> {
 	private rateLimitMap: Map<string, { count: number; resetTime: number }> = new Map();
 	private matchedPlayers: Map<string, MatchInfo> = new Map();
 
-	private checkRateLimit(ip: string, maxRequests = 60, windowMs = 60000): boolean {
-		const now = Date.now();
-		for (const [key, limit] of this.rateLimitMap) if (now > limit.resetTime) this.rateLimitMap.delete(key);
+	// The queue lives in memory for speed but is mirrored to storage on every
+	// membership change, so a deploy or eviction doesn't drop waiting players
+	// or a match that one of them hasn't picked up yet.
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		ctx.blockConcurrencyWhile(async () => {
+			// Stored lastSeen is the join time, so the ghost filter drops anyone who
+			// left meanwhile; a player still searching refreshes it on their next poll.
+			this.queue = (await ctx.storage.get<QueueEntry[]>('queue')) ?? [];
+			this.matchedPlayers = new Map((await ctx.storage.get<[string, MatchInfo][]>('matchedPlayers')) ?? []);
+		});
+	}
 
-		const limit = this.rateLimitMap.get(ip);
-		if (!limit) {
-			this.rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
+	private async save(): Promise<void> {
+		await this.ctx.storage.put({ queue: this.queue, matchedPlayers: [...this.matchedPlayers] });
+	}
+
+	private checkRateLimit(key: string, maxRequests: number, windowMs = 60000): boolean {
+		const now = Date.now();
+		const limit = this.rateLimitMap.get(key);
+		if (!limit || now > limit.resetTime) {
+			this.rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
 			return true;
 		}
 		if (limit.count >= maxRequests) return false;
@@ -51,12 +66,21 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		return true;
 	}
 
+	private pruneRateLimits() {
+		const now = Date.now();
+		for (const [key, limit] of this.rateLimitMap) if (now > limit.resetTime) this.rateLimitMap.delete(key);
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const clientIP = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
 
-		if (!this.checkRateLimit(clientIP)) return json({ error: 'Rate limit exceeded' }, 429);
-		if (request.method !== 'POST' || (url.pathname !== '/join' && url.pathname !== '/leave')) {
+		// Limit per player like any WebSocket game server would, with a loose per-IP
+		// ceiling against floods. A tight per-IP limit locks out everyone behind a
+		// shared address (schools, offices, mobile carrier NAT).
+		if (this.rateLimitMap.size > 10_000) this.pruneRateLimits();
+		if (!this.checkRateLimit(`ip:${clientIP}`, 1200)) return json({ error: 'Rate limit exceeded' }, 429);
+		if (request.method !== 'POST' || !['/join', '/leave', '/private'].includes(url.pathname)) {
 			return new Response('Not found', { status: 404 });
 		}
 
@@ -65,15 +89,19 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			if (body.length > 1024) return json({ error: 'Request too large' }, 400);
 			const { playerId, nickname } = JSON.parse(body) as { playerId: unknown; nickname?: unknown };
 			if (!isValidPlayerId(playerId)) return invalid();
+			// Searching polls every 2s (30/min); leave some room for retries
+			if (!this.checkRateLimit(`player:${playerId}`, 60)) return json({ error: 'Rate limit exceeded' }, 429);
 
 			if (url.pathname === '/leave') {
 				const initialLength = this.queue.length;
 				this.queue = this.queue.filter((entry) => entry.playerId !== playerId);
+				if (this.queue.length < initialLength) await this.save();
 				return json({ success: this.queue.length < initialLength, playersInQueue: this.queue.length });
 			}
 
 			const sanitizedNickname = sanitizeNickname(nickname);
 			if (sanitizedNickname === null) return invalid();
+			if (url.pathname === '/private') return await this.createPrivateGame(playerId, sanitizedNickname);
 			return await this.handleJoin(playerId, sanitizedNickname);
 		} catch (error) {
 			console.error('Error in MatchmakingQueue:', error);
@@ -85,6 +113,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		const matchInfo = this.matchedPlayers.get(playerId);
 		if (matchInfo) {
 			this.matchedPlayers.delete(playerId);
+			await this.save();
 			return json({ matched: true, gameId: matchInfo.gameId, yourSymbol: matchInfo.symbol, connectToken: matchInfo.token });
 		}
 
@@ -93,12 +122,27 @@ export class MatchmakingQueue extends DurableObject<Env> {
 			this.queue[index].lastSeen = Date.now();
 		} else {
 			this.queue.push({ playerId, lastSeen: Date.now(), nickname });
+			await this.save();
 			const match = await this.tryMatch(playerId);
 			if (match) return json({ matched: true, ...match });
 			index = this.queue.findIndex((entry) => entry.playerId === playerId);
 		}
 
 		return json({ matched: false, position: index + 1, playersInQueue: this.queue.length });
+	}
+
+	// A private game starts with only its host admitted; the friend claims the
+	// second seat through the invite link (GameSession /join).
+	private async createPrivateGame(playerId: string, nickname: string | undefined): Promise<Response> {
+		const gameId = `game-${crypto.randomUUID()}`;
+		const token = crypto.randomUUID();
+		const stub = this.env.GAME_SESSION.get(this.env.GAME_SESSION.idFromName(gameId));
+		await stub.fetch('http://localhost/init', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ gameId, players: [{ id: playerId, symbol: 'X', token, nickname }] }),
+		});
+		return json({ gameId, yourSymbol: 'X', connectToken: token });
 	}
 
 	private async tryMatch(requestingPlayerId: string): Promise<{ gameId: string; yourSymbol: PlayerSymbol; connectToken: string } | null> {
@@ -123,6 +167,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		// interleave during the session fetch, and a poll that finds neither queue nor
 		// match entry would re-queue that player into a second game.
 		for (const { entry, info } of players) this.matchedPlayers.set(entry.playerId, info);
+		await this.save();
 
 		try {
 			const stub = this.env.GAME_SESSION.get(this.env.GAME_SESSION.idFromName(gameId));
@@ -137,6 +182,7 @@ export class MatchmakingQueue extends DurableObject<Env> {
 		} catch (error) {
 			for (const { entry } of players) this.matchedPlayers.delete(entry.playerId);
 			this.queue.unshift(player1, player2);
+			await this.save();
 			throw error;
 		}
 

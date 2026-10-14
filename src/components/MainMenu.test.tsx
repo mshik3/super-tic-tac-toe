@@ -7,7 +7,14 @@ describe("MainMenu nickname validation", () => {
   const setup = () => {
     const onPlayLocal = vi.fn();
     const onPlayOnline = vi.fn();
-    render(<MainMenu onPlayLocal={onPlayLocal} onPlayOnline={onPlayOnline} />);
+    render(
+      <MainMenu
+        onPlayLocal={onPlayLocal}
+        onPlayOnline={onPlayOnline}
+        onPlayFriend={vi.fn()}
+        onPlayBot={vi.fn()}
+      />
+    );
     const input = screen.getByLabelText(/your nickname/i) as HTMLInputElement;
     const button = screen.getByRole("button", { name: /play online/i });
     return { onPlayLocal, onPlayOnline, input, button };
