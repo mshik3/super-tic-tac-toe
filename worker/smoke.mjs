@@ -88,6 +88,8 @@ const d = (async () => {
   wa.close();
   await sleep(1000);
   console.log('D drop shown:', lastState(wb)?.opponentConnected === false ? 'ok' : 'BUG');
+  const fm = lastState(wb)?.opponentForfeitMs;
+  console.log('D forfeit countdown sent:', fm > 55_000 && fm <= 60_000 ? 'ok' : `BUG (${fm})`);
   await sleep(61_000);
   const over = wb.msgs.find((m) => m.type === 'GAME_OVER')?.payload;
   console.log('D forfeit:', over?.reason === 'forfeit' && over.winner === 'O' ? 'ok' : `BUG (${JSON.stringify(over)})`);

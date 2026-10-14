@@ -20,6 +20,7 @@ import {
   useFindOnlineGame,
   useTurnDeadline,
   useScore,
+  useForfeitDeadline,
   useRematch,
   useRequestRematch,
 } from "../store/gameStore";
@@ -191,7 +192,7 @@ export const GameScreen: React.FC = () => {
               color: "#F0B500",
             }}
           >
-            Opponent disconnected. They have 60 seconds to return or they forfeit.
+            <ForfeitCountdown />
           </div>
         )}
 
@@ -585,8 +586,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
   );
 };
 
-const TurnClock: React.FC = () => {
-  const deadline = useTurnDeadline();
+function useSecondsLeft(deadline: number | null) {
   const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
@@ -594,8 +594,24 @@ const TurnClock: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  if (deadline === null) return null;
-  const secondsLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+  return deadline === null ? null : Math.max(0, Math.ceil((deadline - now) / 1000));
+}
+
+const ForfeitCountdown: React.FC = () => {
+  const secondsLeft = useSecondsLeft(useForfeitDeadline());
+  return (
+    <span role="timer">
+      Opponent disconnected.{" "}
+      {secondsLeft === null
+        ? "Waiting for them to return…"
+        : `They forfeit in ${secondsLeft}s unless they return.`}
+    </span>
+  );
+};
+
+const TurnClock: React.FC = () => {
+  const secondsLeft = useSecondsLeft(useTurnDeadline());
+  if (secondsLeft === null) return null;
   const low = secondsLeft <= 15;
 
   return (

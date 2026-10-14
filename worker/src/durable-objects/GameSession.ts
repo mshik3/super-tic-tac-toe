@@ -29,6 +29,7 @@ export class GameSession extends DurableObject<Env> {
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
 	private moves: StoredMove[] = [];
 	private turnDeadline = 0; // epoch ms when the current player loses on time
+	private forfeitAt = 0; // epoch ms when a dropped player forfeits
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
 	private wins: Record<string, number> = {}; // series score by playerId
 	private rematchVotes = new Set<string>();
@@ -383,8 +384,8 @@ export class GameSession extends DurableObject<Env> {
 		if (!player) return;
 		player.connected = false;
 		this.rematchVotes.clear();
+		await this.updateAlarm(); // sets forfeitAt, which the broadcast reports
 		this.broadcastGameState();
-		await this.updateAlarm();
 	}
 
 	// Alarm policy: finished games are wiped after 30s, or 10min while both
@@ -399,7 +400,8 @@ export class GameSession extends DurableObject<Env> {
 			if (!this.turnDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 			await this.ctx.storage.setAlarm(this.turnDeadline);
 		} else {
-			await this.ctx.storage.setAlarm(Date.now() + 60_000);
+			this.forfeitAt = Date.now() + 60_000;
+			await this.ctx.storage.setAlarm(this.forfeitAt);
 		}
 	}
 
@@ -457,6 +459,10 @@ export class GameSession extends DurableObject<Env> {
 			winner: this.gameState.winner,
 			opponentConnected: this.getOpponentConnected(playerId),
 			turnTimeLeftMs: this.turnTimeLeftMs(),
+			opponentForfeitMs:
+				this.gameState.status === 'playing' && !this.getOpponentConnected(playerId) && this.forfeitAt
+					? Math.max(0, this.forfeitAt - Date.now())
+					: undefined,
 			yourNickname: this.allowedPlayers.get(playerId)?.nickname,
 			opponentNickname: this.getOpponentNickname(playerId),
 			moves: this.moves,

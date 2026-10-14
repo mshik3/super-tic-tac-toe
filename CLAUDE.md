@@ -30,6 +30,3 @@ npm run deploy           # deploy to Cloudflare
 - Durable Objects over database — <5ms latency, geographic co-location of players
 - HTTP polling for matchmaking (stateless), WebSocket for gameplay (stateful)
 - Worker imports the game engine and protocol types straight from `src/` by relative path (wrangler bundles them); no shared package
-
-## Known Limitations
-- Disconnect banner says 60s but shows no live countdown (the turn clock is live)

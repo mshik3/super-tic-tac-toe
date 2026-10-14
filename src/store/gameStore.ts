@@ -45,6 +45,7 @@ interface GameStore {
   opponentNickname: string | null;
   gameOverReason: GameOverPayload["reason"] | null;
   turnDeadline: number | null; // local epoch ms when the player to move loses on time
+  forfeitDeadline: number | null; // local epoch ms when a dropped opponent forfeits
   score: { you: number; opponent: number };
   rematch: { you: boolean; opponent: boolean };
   websocket: GameWebSocket | null;
@@ -127,6 +128,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
   opponentNickname: null,
   gameOverReason: null,
   turnDeadline: null,
+  forfeitDeadline: null,
   score: { you: 0, opponent: 0 },
   rematch: { you: false, opponent: false },
   websocket: null,
@@ -298,6 +300,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
 
     set({
       turnDeadline: null,
+      forfeitDeadline: null,
       score: { you: 0, opponent: 0 },
       rematch: { you: false, opponent: false },
       websocket: null,
@@ -345,6 +348,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
           opponentNickname: payload.opponentNickname ?? null,
           playerNickname: payload.yourNickname ?? get().playerNickname,
           turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
+          forfeitDeadline: deadlineFrom(payload.opponentForfeitMs),
           gameOverReason: payload.status === "finished" ? get().gameOverReason : null,
           score: { you: payload.yourWins, opponent: payload.opponentWins },
           rematch: { you: payload.youWantRematch, opponent: payload.opponentWantsRematch },
@@ -461,6 +465,7 @@ export const useOpponentNickname = () => useGameStore((s) => s.opponentNickname)
 export const useGameOverReason = () => useGameStore((s) => s.gameOverReason);
 export const usePlayerNickname = () => useGameStore((s) => s.playerNickname);
 export const useTurnDeadline = () => useGameStore((s) => s.turnDeadline);
+export const useForfeitDeadline = () => useGameStore((s) => s.forfeitDeadline);
 export const useScore = () => useGameStore((s) => s.score);
 export const useRematch = () => useGameStore((s) => s.rematch);
 export const useRequestRematch = () => useGameStore((s) => s.requestRematch);

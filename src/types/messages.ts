@@ -31,6 +31,7 @@ export interface GameStatePayload {
   winner?: GameWinner;
   opponentConnected: boolean;
   turnTimeLeftMs?: number; // ms left on the current turn while playing
+  opponentForfeitMs?: number; // ms until a dropped opponent forfeits
   yourNickname?: string;
   opponentNickname?: string;
   moves: StoredMove[];
