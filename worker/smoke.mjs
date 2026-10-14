@@ -132,5 +132,23 @@ const r = (async () => {
   wa.close(); wb.close();
 })();
 
-await Promise.all([c, d, r]);
+// P: the turn clock pauses while a player is dropped and resumes where it left off
+const mp = await match();
+const pz = (async () => {
+  const { a, b, ma, mb } = mp;
+  const wa = await open(ma.gameId, a, ma.connectToken);
+  const wb = await open(mb.gameId, b, mb.connectToken);
+  await sleep(3000);
+  wa.close();
+  await sleep(500);
+  console.log('P clock hidden while paused:', lastState(wb)?.turnTimeLeftMs === undefined ? 'ok' : `BUG (${lastState(wb)?.turnTimeLeftMs})`);
+  await sleep(10_000);
+  const wa2 = await open(ma.gameId, a, ma.connectToken);
+  await sleep(500);
+  const left = lastState(wa2)?.turnTimeLeftMs;
+  console.log('P clock resumed:', left > 85_000 && left <= 87_500 ? 'ok' : `BUG (${left})`);
+  wa2.close(); wb.close();
+})();
+
+await Promise.all([c, d, r, pz]);
 process.exit(0);

@@ -29,6 +29,7 @@ export class GameSession extends DurableObject<Env> {
 	private moveRateLimit: Map<string, { count: number; resetTime: number }> = new Map();
 	private moves: StoredMove[] = [];
 	private turnDeadline = 0; // epoch ms when the current player loses on time
+	private turnPausedMs: number | null = null; // turn time left, frozen while a player is dropped
 	private forfeitAt = 0; // epoch ms when a dropped player forfeits
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
 	private wins: Record<string, number> = {}; // series score by playerId
@@ -39,6 +40,7 @@ export class GameSession extends DurableObject<Env> {
 			moves: this.moves,
 			gameState: this.gameState,
 			turnDeadline: this.turnDeadline,
+			turnPausedMs: this.turnPausedMs,
 			wins: this.wins,
 			allowedPlayers: Array.from(this.allowedPlayers.entries()),
 		});
@@ -48,6 +50,7 @@ export class GameSession extends DurableObject<Env> {
 		this.moves = (await this.ctx.storage.get<StoredMove[]>('moves')) ?? [];
 		this.gameState = (await this.ctx.storage.get<GameState>('gameState')) ?? createNewGame(gameId);
 		this.turnDeadline = (await this.ctx.storage.get<number>('turnDeadline')) ?? 0;
+		this.turnPausedMs = (await this.ctx.storage.get<number | null>('turnPausedMs')) ?? null;
 		this.wins = (await this.ctx.storage.get<Record<string, number>>('wins')) ?? {};
 	}
 
@@ -302,7 +305,8 @@ export class GameSession extends DurableObject<Env> {
 		};
 
 		this.moves.push(storedMove);
-		this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+		if (this.turnPausedMs !== null) this.turnPausedMs = TURN_TIMEOUT_MS;
+		else this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 		await this.persist();
 
 		// Send successful move result to all players
@@ -364,6 +368,7 @@ export class GameSession extends DurableObject<Env> {
 			this.gameState = createNewGame(this.gameState.gameId);
 			this.moves = [];
 			this.turnDeadline = 0;
+			this.turnPausedMs = null;
 			await this.persist();
 			await this.updateAlarm();
 		}
@@ -376,7 +381,10 @@ export class GameSession extends DurableObject<Env> {
 
 	private turnTimeLeftMs() {
 		// Clock hasn't started until both players have connected once
-		return this.gameState?.status === 'playing' && this.turnDeadline ? Math.max(0, this.turnDeadline - Date.now()) : undefined;
+		// and is hidden while paused
+		return this.gameState?.status === 'playing' && this.turnDeadline && this.turnPausedMs === null
+			? Math.max(0, this.turnDeadline - Date.now())
+			: undefined;
 	}
 
 	private async handlePlayerDisconnect(playerId: string) {
@@ -391,15 +399,24 @@ export class GameSession extends DurableObject<Env> {
 	// Alarm policy: finished games are wiped after 30s, or 10min while both
 	// players are still there and might rematch. A game in progress with
 	// both players connected runs the turn clock: the player to move loses at
-	// turnDeadline. Otherwise (waiting for a player, or someone dropped) the alarm
-	// fires in 60s: a lone connected player wins by forfeit, an empty session is wiped.
+	// turnDeadline. Otherwise (waiting for a player, or someone dropped) the turn
+	// clock pauses and the alarm fires in 60s: a lone connected player wins by
+	// forfeit, an empty session is wiped.
 	private async updateAlarm() {
 		if (this.gameState?.status === 'finished') {
 			await this.ctx.storage.setAlarm(Date.now() + (this.allConnected() ? 600_000 : 30_000));
 		} else if (this.gameState?.status === 'playing' && this.allConnected()) {
-			if (!this.turnDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+			if (this.turnPausedMs !== null) {
+				this.turnDeadline = Date.now() + this.turnPausedMs;
+				this.turnPausedMs = null;
+				await this.persist();
+			} else if (!this.turnDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 			await this.ctx.storage.setAlarm(this.turnDeadline);
 		} else {
+			if (this.gameState?.status === 'playing' && this.turnDeadline && this.turnPausedMs === null) {
+				this.turnPausedMs = Math.max(0, this.turnDeadline - Date.now());
+				await this.persist();
+			}
 			this.forfeitAt = Date.now() + 60_000;
 			await this.ctx.storage.setAlarm(this.forfeitAt);
 		}
