@@ -56,25 +56,7 @@ export const GameScreen: React.FC = () => {
   }, [error, clearError]);
 
   if (!gameState) {
-    return (
-      <div
-        className="h-screen flex items-center justify-center"
-        style={{ backgroundColor: "var(--bg)" }}
-      >
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
-            style={{ borderColor: "var(--x)" }}
-          />
-          <p
-            className="text-sm font-medium tracking-widest uppercase"
-            style={{ color: "var(--text-dim)" }}
-          >
-            Loading…
-          </p>
-        </div>
-      </div>
-    );
+    return <p className="p-6 text-center text-muted">Loading…</p>;
   }
 
   const isOnline = gameMode === "online";
@@ -131,22 +113,19 @@ export const GameScreen: React.FC = () => {
   const iLost =
     isOnline && winner !== "draw" && winner !== null && winner !== playerSymbol;
 
+  const resultText =
+    winner === "draw"
+      ? "Draw"
+      : iWon
+        ? "You win"
+        : iLost
+          ? "You lose"
+          : `${winnerName} wins`;
+
   return (
-    <div
-      className="h-screen flex flex-col overflow-hidden"
-      style={{ backgroundColor: "var(--bg)" }}
-    >
-      {/* ── Top Player HUD ─────────────────────────────────── */}
-      <div
-        className="shrink-0 border-b"
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
-        }}
-      >
-        {/* Player vs Player bar */}
+    <div className="h-full flex flex-col">
+      <div className="shrink-0 bg-panel border-b border-line">
         <div className="flex items-stretch">
-          {/* X player card */}
           <PlayerCard
             symbol="X"
             name={xName}
@@ -156,22 +135,12 @@ export const GameScreen: React.FC = () => {
             connected={xIsMe ? connectionStatus === "connected" : opponentConnected}
             side="left"
           />
-
-          {/* VS divider */}
-          <div
-            className="flex flex-col items-center justify-center px-3 md:px-6 shrink-0"
-            style={{ backgroundColor: "var(--bg)" }}
-          >
-            <span
-              className="text-xs font-bold tracking-widest"
-              style={{ color: "var(--text-dim)" }}
-            >
-              {isOnline ? `${xWins} – ${oWins}` : "VS"}
+          <div className="shrink-0 flex flex-col items-center justify-center px-3 md:px-6 border-x border-line bg-strip font-mono">
+            <span className="text-sm font-bold" aria-label="Series score">
+              {isOnline ? `${xWins}–${oWins}` : "vs"}
             </span>
             {isOnline && !isFinished && <TurnClock />}
           </div>
-
-          {/* O player card */}
           <PlayerCard
             symbol="O"
             name={oName}
@@ -184,177 +153,69 @@ export const GameScreen: React.FC = () => {
         </div>
 
         {isOnline && !isFinished && !opponentConnected && gameState.status === "playing" && (
-          <div
-            className="px-4 py-2 text-center text-sm font-medium"
-            style={{
-              backgroundColor: "rgba(245, 192, 48, 0.08)",
-              borderTop: "1px solid rgba(245, 192, 48, 0.2)",
-              color: "#F0B500",
-            }}
-          >
+          <div className="px-3 py-1.5 text-center text-xs bg-warn-soft border-t border-warn-line text-warn">
             <ForfeitCountdown />
           </div>
         )}
 
-        {/* Error banner */}
         {error && (
-          <div
-            className="px-4 py-2 text-center text-sm font-medium"
-            style={{
-              backgroundColor: "rgba(248, 113, 113, 0.1)",
-              borderTop: "1px solid rgba(248, 113, 113, 0.3)",
-              color: "var(--o)",
-            }}
-          >
+          <div role="alert" className="px-3 py-1.5 text-center text-xs bg-o-soft border-t border-o text-o">
             {error}
           </div>
         )}
-      </div>
 
-      {/* ── Game Over Banner ───────────────────────────────── */}
-      {isFinished && (
-        <div
-          className="shrink-0 py-3 px-4 text-center animate-slide-up border-b"
-          style={{
-            backgroundColor:
-              winner === "draw"
-                ? "rgba(77, 96, 128, 0.15)"
-                : winner === "X"
-                  ? "rgba(34, 211, 238, 0.1)"
-                  : "rgba(248, 113, 113, 0.1)",
-            borderColor:
-              winner === "draw"
-                ? "var(--border)"
-                : winner === "X"
-                  ? "rgba(34, 211, 238, 0.35)"
-                  : "rgba(248, 113, 113, 0.35)",
-          }}
-        >
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <div>
-              {winner === "draw" ? (
-                <span
-                  className="text-lg md:text-xl font-bold tracking-wide"
-                  style={{ color: "var(--text)" }}
-                >
-                  DRAW
+        {isFinished && (
+          <div className="px-3 py-2 border-t border-line bg-strip flex items-center justify-center gap-x-4 gap-y-2 flex-wrap">
+            <p className="text-base font-bold">
+              <span className={winner === "X" ? "text-x" : winner === "O" ? "text-o" : ""}>
+                {resultText}
+              </span>
+              {(gameOverReason === "forfeit" || gameOverReason === "timeout") && (
+                <span className="ml-2 text-xs font-normal text-muted">
+                  {gameOverReason === "forfeit" ? "by forfeit" : "on time"}
                 </span>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span
-                    className="text-2xl md:text-3xl font-bold"
-                    style={{
-                      color: winner === "X" ? "var(--x)" : "var(--o)",
-                      textShadow:
-                        winner === "X"
-                          ? "0 0 20px rgba(0,204,255,0.5)"
-                          : "0 0 20px rgba(255,68,68,0.5)",
-                    }}
-                  >
-                    {winner}
-                  </span>
-                  <span
-                    className="text-lg md:text-xl font-bold tracking-wide"
-                    style={{ color: "var(--text)" }}
-                  >
-                    {isOnline
-                      ? iWon
-                        ? "YOU WIN"
-                        : iLost
-                          ? "YOU LOSE"
-                          : `${winnerName} WINS`
-                      : `${winnerName} WINS`}
-                    {(gameOverReason === "forfeit" || gameOverReason === "timeout") && (
-                      <span
-                        className="ml-2 text-xs font-medium tracking-wide normal-case"
-                        style={{ color: "var(--text-dim)" }}
-                      >
-                        {gameOverReason === "forfeit" ? "by forfeit" : "on time"}
-                      </span>
-                    )}
-                  </span>
-                </div>
               )}
-            </div>
+            </p>
 
             <div className="flex gap-2 flex-wrap justify-center">
               {isOnline ? (
-                <button
-                  onClick={requestRematch}
-                  disabled={!opponentConnected || rematch.you}
-                  className={`px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed ${
-                    rematch.opponent && !rematch.you ? "animate-pulse" : ""
-                  }`}
-                  style={{
-                    backgroundColor: "var(--x)",
-                    color: "var(--bg)",
-                    border: "1px solid var(--border-2)",
-                  }}
-                >
-                  {!opponentConnected
-                    ? "Opponent left"
-                    : rematch.you
-                      ? "Waiting for opponent…"
-                      : rematch.opponent
-                        ? "Accept rematch"
-                        : "Rematch"}
-                </button>
+                <>
+                  <button
+                    onClick={requestRematch}
+                    disabled={!opponentConnected || rematch.you}
+                    className={`btn-primary ${rematch.opponent && !rematch.you ? "animate-pulse" : ""}`}
+                  >
+                    {!opponentConnected
+                      ? "Opponent left"
+                      : rematch.you
+                        ? "Waiting for opponent…"
+                        : rematch.opponent
+                          ? "Accept rematch"
+                          : "Rematch"}
+                  </button>
+                  <button onClick={handleNewGame} className="btn">
+                    New opponent
+                  </button>
+                </>
               ) : (
-                <button
-                  onClick={handleNewGame}
-                  className="px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80"
-                  style={{
-                    backgroundColor: "var(--surface-2)",
-                    color: "var(--text)",
-                    border: "1px solid var(--border-2)",
-                  }}
-                >
-                  Play Again
+                <button onClick={handleNewGame} className="btn-primary">
+                  Play again
                 </button>
               )}
-
-              {isOnline && (
-                <button
-                  onClick={handleNewGame}
-                  className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
-                  style={{
-                    backgroundColor: "var(--surface-2)",
-                    color: "var(--text-dim)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  New opponent
-                </button>
-              )}
-
-              <button
-                onClick={disconnectFromGame}
-                className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
-                style={{
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text-dim)",
-                  border: "1px solid var(--border)",
-                }}
-              >
+              <button onClick={disconnectFromGame} className="btn">
                 Menu
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ── Main content ───────────────────────────────────── */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left — Instructions (desktop) */}
-        <div
-          className="hidden md:block w-72 border-r shrink-0 overflow-y-auto"
-          style={{ borderColor: "var(--border)" }}
-        >
+      <div className="flex-1 flex min-h-0 gap-3 p-3">
+        <aside className="hidden md:block w-64 shrink-0 panel overflow-hidden">
           <Instructions />
-        </div>
+        </aside>
 
-        {/* Center — Board */}
-        <div className="flex-1 flex p-3 md:p-6 overflow-y-auto">
+        <div className="flex-1 flex overflow-y-auto">
           {/* m-auto, not items-center: centering would clip the top when content overflows */}
           <div className="m-auto flex flex-col items-center gap-3 w-full">
             <GameBoard
@@ -364,129 +225,59 @@ export const GameScreen: React.FC = () => {
               currentPlayer={gameState.currentPlayer}
             />
 
-            {/* Mobile controls */}
-            <div className="flex md:hidden items-center gap-2 mt-1">
-              <button
-                onClick={() => setIsMenuOpen(true)}
-                className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
-                style={{
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text-dim)",
-                  border: "1px solid var(--border)",
-                }}
-              >
+            <div className="flex md:hidden items-center gap-2">
+              <button onClick={() => setIsMenuOpen(true)} className="btn">
                 Rules
               </button>
-              <button
-                onClick={handleNewGame}
-                className="px-3 py-1.5 rounded text-xs font-bold tracking-wide uppercase"
-                style={{
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border-2)",
-                }}
-              >
-                {isOnline ? "New Opponent" : "New Game"}
+              <button onClick={handleNewGame} className="btn">
+                {isOnline ? "New opponent" : "New game"}
               </button>
-              <button
-                onClick={handleDisconnect}
-                className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
-                style={{
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text-dim)",
-                  border: "1px solid var(--border)",
-                }}
-              >
+              <button onClick={handleDisconnect} className="btn">
                 {isOnline ? "Leave" : "Menu"}
               </button>
             </div>
 
-            {/* Mobile — move log */}
-            <div
-              className="w-full md:hidden rounded border"
-              style={{ borderColor: "var(--border)" }}
-            >
+            <div className="w-full md:hidden panel overflow-hidden">
               <MoveLog
                 moves={moves}
                 currentPlayer={gameState.currentPlayer}
                 isGameActive={gameState.status === "playing"}
                 order="desc"
                 heightClass="h-48"
-                autoScroll={false}
               />
             </div>
           </div>
         </div>
 
-        {/* Right — Move log (desktop) */}
-        <div
-          className="hidden md:flex w-72 border-l shrink-0 flex-col"
-          style={{ borderColor: "var(--border)" }}
-        >
+        <aside className="hidden md:flex w-64 shrink-0 flex-col panel overflow-hidden">
           <MoveLog
             moves={moves}
             currentPlayer={gameState.currentPlayer}
             isGameActive={gameState.status === "playing"}
-            order="asc"
             autoScroll
           />
-
-          {/* Desktop action buttons */}
-          <div
-            className="p-4 border-t space-y-2"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <button
-              onClick={handleNewGame}
-              className="w-full py-2 rounded font-bold text-sm tracking-widest uppercase transition-opacity hover:opacity-80"
-              style={{
-                backgroundColor: "rgba(0,204,255,0.12)",
-                color: "var(--x)",
-                border: "1px solid rgba(0,204,255,0.3)",
-              }}
-            >
-              {isOnline ? "New Opponent" : "New Game"}
+          <div className="p-3 border-t border-line flex flex-col gap-2">
+            <button onClick={handleNewGame} className="btn">
+              {isOnline ? "New opponent" : "New game"}
             </button>
-
-            <button
-              onClick={handleDisconnect}
-              className="w-full py-2 rounded font-semibold text-sm tracking-wide uppercase transition-opacity hover:opacity-70"
-              style={{
-                backgroundColor: "var(--surface-2)",
-                color: "var(--text-dim)",
-                border: "1px solid var(--border)",
-              }}
-            >
-              {isOnline ? "Leave Game" : "Menu"}
+            <button onClick={handleDisconnect} className="btn">
+              {isOnline ? "Leave" : "Menu"}
             </button>
           </div>
-        </div>
+        </aside>
       </div>
 
-      {/* Mobile slide-over for Instructions */}
       {isMenuOpen && (
         <div className="md:hidden fixed inset-0 z-50">
-          <div
-            className="absolute inset-0"
-            style={{ backgroundColor: "rgba(8,12,20,0.7)" }}
-            onClick={() => setIsMenuOpen(false)}
-          />
-          <div
-            className="absolute inset-y-0 left-0 w-80 max-w-[85vw] shadow-2xl"
-            style={{ backgroundColor: "var(--surface)" }}
-          >
-            <Instructions
-              showHeaderClose
-              onClose={() => setIsMenuOpen(false)}
-            />
+          <div className="absolute inset-0 bg-ink/40" onClick={() => setIsMenuOpen(false)} />
+          <div className="absolute inset-y-0 left-0 w-80 max-w-[85vw] border-r border-line-strong">
+            <Instructions showHeaderClose onClose={() => setIsMenuOpen(false)} />
           </div>
         </div>
       )}
     </div>
   );
 };
-
-// ── Player Card Component ─────────────────────────────────────
 
 interface PlayerCardProps {
   symbol: "X" | "O";
@@ -508,79 +299,33 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
   side,
 }) => {
   const isX = symbol === "X";
-  const color = isX ? "var(--x)" : "var(--o)";
-  const dimColor = isX
-    ? "rgba(34, 211, 238, 0.07)"
-    : "rgba(248, 113, 113, 0.07)";
-  const activeColor = isX
-    ? "rgba(34, 211, 238, 0.13)"
-    : "rgba(248, 113, 113, 0.13)";
-  const borderActive = isX
-    ? "rgba(34, 211, 238, 0.45)"
-    : "rgba(248, 113, 113, 0.45)";
-
   return (
     <div
-      className={`flex-1 flex items-center gap-3 px-3 md:px-5 py-2.5 transition-all duration-300 ${side === "right" ? "flex-row-reverse" : ""}`}
-      style={{
-        backgroundColor: isActive ? activeColor : dimColor,
-        borderBottom: isActive ? `2px solid ${borderActive}` : "2px solid transparent",
-      }}
+      className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-2 border-b-2 ${
+        side === "right" ? "flex-row-reverse text-right" : ""
+      } ${isActive ? (isX ? "bg-x-soft border-x" : "bg-o-soft border-o") : "border-transparent"}`}
     >
-      {/* Symbol badge */}
-      <div
-        className="shrink-0 w-9 h-9 md:w-10 md:h-10 rounded flex items-center justify-center font-bold text-xl select-none"
-        style={{
-          backgroundColor: isActive ? `${color}22` : "var(--surface-2)",
-          color: isActive ? color : "var(--text-dim)",
-          border: `1px solid ${isActive ? `${color}55` : "var(--border)"}`,
-          boxShadow: isActive ? `0 0 12px ${isX ? "rgba(34,211,238,0.25)" : "rgba(248,113,113,0.25)"}` : "none",
-        }}
+      <span
+        className={`shrink-0 w-8 h-8 flex items-center justify-center rounded border bg-well text-lg font-bold ${
+          isX ? "text-x border-x/50" : "text-o border-o/50"
+        }`}
       >
         {symbol}
-      </div>
-
-      {/* Name + status */}
+      </span>
       <div className={`min-w-0 flex flex-col ${side === "right" ? "items-end" : "items-start"}`}>
-        <div className="flex items-center gap-1.5">
-          {/* Online connection dot */}
+        <span className="flex items-center gap-1.5 max-w-full">
           {isOnline && (
-            <div
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{
-                backgroundColor:
-                  connected === true
-                    ? "#22c55e"
-                    : connected === false
-                      ? "#ef4444"
-                      : "var(--text-dim)",
-              }}
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                connected === true ? "bg-ok" : connected === false ? "bg-o" : "bg-line"
+              }`}
+              title={connected ? "Connected" : "Disconnected"}
             />
           )}
-          <span
-            className="font-bold text-sm md:text-base tracking-wide truncate max-w-[100px] md:max-w-[160px]"
-            style={{ color: isActive ? "var(--text)" : "var(--text-dim)" }}
-          >
-            {name}
-          </span>
-          {isMe && isOnline && (
-            <span
-              className="text-xs font-semibold tracking-wider uppercase"
-              style={{ color: "var(--text-dim)", fontSize: "0.6rem" }}
-            >
-              you
-            </span>
-          )}
-        </div>
-
-        {isActive && (
-          <span
-            className="text-xs font-bold tracking-widest uppercase animate-blink"
-            style={{ color, fontSize: "0.6rem" }}
-          >
-            ▸ Your Turn
-          </span>
-        )}
+          <span className="font-bold truncate">{name}</span>
+          {isMe && isOnline && <span className="text-xs text-muted">(you)</span>}
+        </span>
+        <span className="text-xs text-muted">{isActive ? "to move" : " "}</span>
       </div>
     </div>
   );
@@ -601,10 +346,10 @@ const ForfeitCountdown: React.FC = () => {
   const secondsLeft = useSecondsLeft(useForfeitDeadline());
   return (
     <span role="timer">
-      Opponent disconnected.{" "}
+      Your opponent dropped.{" "}
       {secondsLeft === null
-        ? "Waiting for them to return…"
-        : `They forfeit in ${secondsLeft}s unless they return.`}
+        ? "Waiting for them to come back…"
+        : `They have ${secondsLeft}s to come back or they forfeit.`}
     </span>
   );
 };
@@ -612,16 +357,14 @@ const ForfeitCountdown: React.FC = () => {
 const TurnClock: React.FC = () => {
   const secondsLeft = useSecondsLeft(useTurnDeadline());
   if (secondsLeft === null) return null;
-  const low = secondsLeft <= 15;
 
   return (
     <span
-      className="text-xs font-bold tabular-nums mt-1"
-      style={{ color: low ? "#ef4444" : "var(--text-dim)" }}
+      className={`text-xs tabular-nums ${secondsLeft <= 15 ? "text-o font-bold" : "text-muted"}`}
       role="timer"
       aria-label={`${secondsLeft} seconds left for this turn`}
     >
-      {secondsLeft}s
+      {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
     </span>
   );
 };

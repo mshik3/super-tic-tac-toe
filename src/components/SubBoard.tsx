@@ -26,69 +26,42 @@ export const SubBoard: React.FC<SubBoardProps> = React.memo(
   }) => {
     const winner = checkSubBoardWinner(board);
     const isCompleted = isSubBoardCompleted(board);
-
-    const validMovesForBoard = validMoves.filter(
-      (move) => move.boardIndex === boardIndex
-    );
+    const isLive = isActive && !isCompleted;
 
     const isValidMove = (cellIndex: number): boolean =>
-      validMovesForBoard.some((move) => move.cellIndex === cellIndex);
-
-    const activeColorClass =
-      isActive && !isCompleted
-        ? currentPlayer === "X"
-          ? "x-active"
-          : "o-active"
-        : "";
+      validMoves.some(
+        (move) => move.boardIndex === boardIndex && move.cellIndex === cellIndex
+      );
 
     return (
       <div
         className={clsx("sub-board relative", {
-          active: isActive && !isCompleted,
-          won: isCompleted,
-          [activeColorClass]: !!activeColorClass,
+          active: isLive,
+          "x-active": isLive && currentPlayer === "X",
+          "o-active": isLive && currentPlayer === "O",
         })}
         role="grid"
         aria-label={`Sub-board ${boardIndex + 1} ${
           winner ? `won by ${winner}` : isActive ? "(active)" : ""
         }`}
       >
-        {/* Winner overlay — uses CSS vars so it respects board-light/dark theme */}
-        {winner && (
+        {isCompleted && (
           <div
-            className={`absolute inset-0 flex items-center justify-center rounded-lg z-10 animate-winner-pop winner-overlay-${winner.toLowerCase()}`}
-            style={{ backdropFilter: "blur(2px)" }}
+            className={clsx(
+              "absolute inset-0 z-10 flex items-center justify-center font-bold leading-none",
+              winner === "X" && "bg-x-soft/90 text-x",
+              winner === "O" && "bg-o-soft/90 text-o",
+              !winner && "bg-strip/90 hatch text-muted text-xs uppercase tracking-widest"
+            )}
+            style={winner ? { fontSize: "clamp(2.5rem, 10vmin, 4.5rem)" } : undefined}
           >
-            <span
-              className={`font-bold leading-none select-none winner-text-${winner.toLowerCase()}`}
-              style={{ fontSize: "clamp(2.5rem, 10vmin, 4.5rem)" }}
-            >
-              {winner}
-            </span>
-          </div>
-        )}
-
-        {/* Draw overlay */}
-        {isCompleted && !winner && (
-          <div
-            className="absolute inset-0 flex items-center justify-center rounded-lg z-10"
-            style={{ background: "rgba(6, 12, 23, 0.82)", backdropFilter: "blur(2px)" }}
-          >
-            <span
-              className="font-bold tracking-widest uppercase"
-              style={{
-                color: "var(--text-dim)",
-                fontSize: "clamp(0.55rem, 1.8vmin, 0.8rem)",
-              }}
-            >
-              DRAW
-            </span>
+            {winner ?? "Draw"}
           </div>
         )}
 
         {board.map((cell, cellIndex) => (
           <Cell
-            key={`${boardIndex}-${cellIndex}`}
+            key={cellIndex}
             value={cell}
             cellIndex={cellIndex}
             onClick={() => onCellClick(boardIndex, cellIndex)}

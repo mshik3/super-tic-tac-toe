@@ -47,7 +47,7 @@ describe("MainMenu nickname validation", () => {
     await user.tab();
     expect(button).toBeDisabled();
     expect(
-      screen.getByText(/family-friendly display name/i)
+      screen.getByText(/keep it clean/i)
     ).toBeInTheDocument();
   });
 });

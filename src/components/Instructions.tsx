@@ -1,4 +1,5 @@
 import React from "react";
+import { BOARD_NOTATION } from "../utils/chessNotation";
 
 interface InstructionsProps {
   showHeaderClose?: boolean;
@@ -6,112 +7,70 @@ interface InstructionsProps {
 }
 
 export const Instructions: React.FC<InstructionsProps> = React.memo(
-  ({ showHeaderClose, onClose }) => {
-    return (
-      <div
-        className="h-full flex flex-col"
-        style={{ backgroundColor: "var(--surface)" }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <span
-            className="text-xs font-bold tracking-widest uppercase"
-            style={{ color: "var(--text-dim)" }}
-          >
-            How to Play
-          </span>
-          {showHeaderClose && (
-            <button
-              aria-label="Close"
-              onClick={onClose}
-              className="text-sm font-medium hover:opacity-70 transition-opacity"
-              style={{ color: "var(--text-dim)" }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-          <Section title="Objective">
-            <Rule>Win 3 sub-boards in a row (horizontal, vertical, or diagonal)</Rule>
-            <Rule>Win a sub-board by getting 3 in a row inside it</Rule>
-          </Section>
-
-          <Section title="The Twist">
-            <Rule>Your move sends the opponent to that cell's matching board</Rule>
-            <Rule>If sent to a completed board, you can play anywhere</Rule>
-          </Section>
-
-          <Section title="Strategy">
-            <Rule>Control where your opponent must play</Rule>
-            <Rule>Force them into completed or bad boards</Rule>
-            <Rule>Think 2–3 moves ahead</Rule>
-          </Section>
-
-          <Section title="Board Map">
-            <div
-              className="grid grid-cols-3 gap-1 text-xs font-mono rounded p-2 mt-1"
-              style={{ backgroundColor: "var(--surface-2)" }}
-            >
-              {["UL", "U", "UR", "L", "M", "R", "LL", "Lo", "LR"].map((label) => (
-                <div
-                  key={label}
-                  className="text-center py-1 rounded text-xs font-semibold"
-                  style={{
-                    backgroundColor: "var(--bg)",
-                    color: "var(--text-dim)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  {label}
-                </div>
-              ))}
-            </div>
-          </Section>
-        </div>
-
+  ({ showHeaderClose, onClose }) => (
+    <div className="h-full flex flex-col bg-panel">
+      <div className="panel-title flex items-center justify-between">
+        <span>How to play</span>
+        {showHeaderClose && (
+          <button aria-label="Close" onClick={onClose} className="btn px-2 py-0">
+            ✕
+          </button>
+        )}
       </div>
-    );
-  }
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs leading-relaxed">
+        <blockquote className="space-y-2 border-l-2 border-line-strong pl-3">
+          <p>Each turn, you mark one of the small squares.</p>
+          <p>When you get three in a row on a small board, you’ve won that board.</p>
+          <p>To win the game, you need to win three small boards in a row.</p>
+          <p>
+            You don’t get to pick which of the nine boards to play on. That’s determined by
+            your opponent’s previous move. Whichever square he picks, that’s the board you
+            must play in next. (And whichever square you pick will determine which board he
+            plays on next.)
+          </p>
+          <p>
+            What if my opponent sends me to a board that’s already been won? In that case,
+            congratulations – you get to go anywhere you like, on any of the other boards.
+            (This means you should avoid sending your opponent to an already-won board!)
+          </p>
+          <footer className="text-muted">
+            — Ben Orlin,{" "}
+            <a
+              href="https://mathwithbaddrawings.com/2013/06/16/ultimate-tic-tac-toe/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-ink"
+            >
+              Math with Bad Drawings
+            </a>
+            , 2013
+          </footer>
+        </blockquote>
+
+        <Section title="Notation">
+          <div className="grid grid-cols-3 w-36 gap-px bg-line border border-line font-mono text-center">
+            {Object.values(BOARD_NOTATION).map((label) => (
+              <div key={label} className="bg-well py-0.5">
+                {label}
+              </div>
+            ))}
+          </div>
+          <p className="text-muted mt-1">
+            Move log: board in capitals, then cell. <span className="font-mono text-ink">Rm</span> =
+            right board, middle square.
+          </p>
+        </Section>
+      </div>
+    </div>
+  )
 );
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <h4
-        className="text-xs font-bold tracking-widest uppercase"
-        style={{ color: "var(--text-dim)" }}
-      >
-        {title}
-      </h4>
-      <ul className="space-y-1">{children}</ul>
+    <div>
+      <h3 className="font-bold mb-1">{title}</h3>
+      {children}
     </div>
-  );
-}
-
-function Rule({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span
-        className="mt-0.5 shrink-0 font-bold"
-        style={{ color: "var(--x)", fontSize: "0.6rem" }}
-      >
-        ▸
-      </span>
-      <span className="text-xs leading-relaxed" style={{ color: "var(--text)" }}>
-        {children}
-      </span>
-    </li>
   );
 }

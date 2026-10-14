@@ -121,7 +121,7 @@ export function applyMove(gameState: GameState, move: Move): MoveResult {
   if (!isValidMove(gameState, move)) {
     return {
       valid: false,
-      error: "Invalid move",
+      error: "You can't play there.",
     };
   }
 

@@ -153,18 +153,18 @@ const storeImpl = (set: any, get: any): GameStore => ({
       get();
 
     if (!gameState) {
-      set({ error: "No active game" });
+      set({ error: "No game in progress." });
       return;
     }
 
     if (gameState.status !== "playing") {
-      set({ error: "Game is not in progress" });
+      set({ error: "This game is over." });
       return;
     }
 
     const online = gameMode === "online" && websocket;
     if (online && gameState.currentPlayer !== playerSymbol) {
-      set({ error: "Not your turn" });
+      set({ error: "It's not your turn." });
       return;
     }
 
@@ -172,7 +172,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
     const result = applyMove(gameState, move);
 
     if (!result.valid) {
-      set({ error: result.error || "Invalid move" });
+      set({ error: result.error || "You can't play there." });
       return;
     }
 
@@ -196,7 +196,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
         gameState,
         moves,
         pendingMoves,
-        error: "Failed to send move - please try again",
+        error: "Couldn't send your move. Try again.",
       });
     }
   },
@@ -231,7 +231,7 @@ const storeImpl = (set: any, get: any): GameStore => ({
   setPlayerNickname: (nickname: string) => {
     const result = validateNickname(nickname);
     if (!result.isValid) {
-      set({ error: result.errors[0] || "Invalid display name" });
+      set({ error: result.errors[0] || "Pick a different nickname." });
       return;
     }
     saveNickname(result.sanitized);
@@ -407,10 +407,10 @@ const storeImpl = (set: any, get: any): GameStore => ({
             set({
               moves: moves.slice(0, -1),
               pendingMoves: pendingMoves - 1,
-              error: payload.error || "Move was rejected by server",
+              error: payload.error || "The server didn't accept that move.",
             });
           } else {
-            set({ error: payload.error || "Invalid move" });
+            set({ error: payload.error || "You can't play there." });
           }
         }
         break;

@@ -21,7 +21,7 @@ describe("validateNickname", () => {
   it("rejects empty", () => {
     const r = validateNickname("");
     expect(r.isValid).toBe(false);
-    expect(r.errors[0]).toMatch(/required/i);
+    expect(r.errors[0]).toMatch(/pick a nickname/i);
   });
 
   it("rejects too short and too long", () => {

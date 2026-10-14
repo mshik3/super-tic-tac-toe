@@ -51,7 +51,7 @@ export class GameWebSocket {
           this.config.onMessage(message);
         } catch (error) {
           console.error("Failed to parse WebSocket message:", error);
-          this.config.onError?.(new Error("Invalid message format"));
+          this.config.onError?.(new Error("Got a message from the server we couldn't read."));
         }
       };
 
@@ -72,7 +72,7 @@ export class GameWebSocket {
       this.ws.onerror = (error) => {
         console.error("WebSocket error:", error);
         this.setStatus("error");
-        this.config.onError?.(new Error("WebSocket connection failed"));
+        this.config.onError?.(new Error("Lost connection to the game server."));
       };
     } catch (error) {
       console.error("Failed to create WebSocket:", error);
@@ -140,17 +140,17 @@ export class GameAPIClient {
       });
     } catch {
       throw new Error(
-        "Unable to connect to game server. This may be due to network issues or server maintenance."
+        "Can't reach the game server."
       );
     }
     if (response.status === 429) {
-      throw new Error("Too many requests. Please wait a moment and try again.");
+      throw new Error("Too many requests. Wait a few seconds.");
     }
     if (response.status >= 500) {
-      throw new Error("Server is temporarily unavailable. Please try again in a moment.");
+      throw new Error("The server is having trouble. Try again in a minute.");
     }
     if (!response.ok) {
-      throw new Error(`Request failed: ${response.statusText || "Unknown error"}`);
+      throw new Error(`Request failed (${response.status}).`);
     }
     return response.json();
   }

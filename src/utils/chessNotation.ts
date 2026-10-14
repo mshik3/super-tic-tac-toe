@@ -1,7 +1,7 @@
 import type { Move, PlayerSymbol } from "../types/game";
 
 // Board position mappings for chess-style notation
-const BOARD_NOTATION: Record<number, string> = {
+export const BOARD_NOTATION: Record<number, string> = {
   0: "UL", // Upper Left
   1: "U", // Upper
   2: "UR", // Upper Right

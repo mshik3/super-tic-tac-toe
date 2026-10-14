@@ -219,7 +219,7 @@ export class GameSession extends DurableObject<Env> {
 				case 'MAKE_MOVE':
 					// Security: Rate limit moves to prevent spam
 					if (!this.checkMoveRateLimit(playerId)) {
-						this.sendError(playerId, 'Too many requests');
+						this.sendError(playerId, 'Slow down a little.');
 						return;
 					}
 					await this.handleMakeMove(playerId, player, this.gameState, clientMessage.payload);
@@ -265,7 +265,7 @@ export class GameSession extends DurableObject<Env> {
 
 		// Check if game is in progress
 		if (gameState.status !== 'playing') {
-			this.sendError(playerId, 'Game not active');
+			this.sendError(playerId, 'This game is over.');
 			return;
 		}
 
@@ -280,7 +280,7 @@ export class GameSession extends DurableObject<Env> {
 				board: gameState.board,
 				currentPlayer: gameState.currentPlayer,
 				gameStatus: gameState.status,
-				error: 'Invalid move',
+				error: "You can't play there.",
 			};
 
 			this.sendToPlayer(playerId, {
@@ -354,8 +354,8 @@ export class GameSession extends DurableObject<Env> {
 	// Both players vote; the second vote starts a fresh game in the same session
 	// with sides swapped so the first move alternates.
 	private async handleRematch(playerId: string) {
-		if (this.gameState?.status !== 'finished') return this.sendError(playerId, 'Game still in progress');
-		if (!this.allConnected()) return this.sendError(playerId, 'Opponent has left');
+		if (this.gameState?.status !== 'finished') return this.sendError(playerId, 'Finish this game first.');
+		if (!this.allConnected()) return this.sendError(playerId, 'Your opponent has left.');
 
 		this.rematchVotes.add(playerId);
 		if (this.rematchVotes.size === 2) {

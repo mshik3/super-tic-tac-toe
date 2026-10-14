@@ -44,31 +44,27 @@ function App() {
     disconnectFromGame();
   };
 
-  switch (currentScreen) {
-    case "menu":
-      return (
-        <MainMenu
-          onPlayLocal={handlePlayLocal}
-          onPlayOnline={handlePlayOnline}
-        />
-      );
-
-    case "searching":
-      return (
-        <MatchmakingScreen
-          playerId={playerId}
-          playerNickname={playerNickname}
-          onGameFound={handleGameFound}
-          onCancel={handleCancelSearch}
-        />
-      );
-
-    case "playing":
-      return <GameScreen />;
-
-    default:
-      return <GameScreen />;
-  }
+  return (
+    <div className="h-dvh flex flex-col">
+      <header className="shrink-0 h-8 px-3 flex items-center bg-bar border-b-2 border-accent text-ink">
+        <span className="text-sm font-bold">Super Tic-Tac-Toe</span>
+      </header>
+      <main className="flex-1 min-h-0">
+        {currentScreen === "menu" ? (
+          <MainMenu onPlayLocal={handlePlayLocal} onPlayOnline={handlePlayOnline} />
+        ) : currentScreen === "searching" ? (
+          <MatchmakingScreen
+            playerId={playerId}
+            playerNickname={playerNickname}
+            onGameFound={handleGameFound}
+            onCancel={handleCancelSearch}
+          />
+        ) : (
+          <GameScreen />
+        )}
+      </main>
+    </div>
+  );
 }
 
 export default App;

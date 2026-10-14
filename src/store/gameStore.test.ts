@@ -14,7 +14,7 @@ describe("gameStore setPlayerNickname guard", () => {
     setPlayerNickname("sh1t");
     const state = useGameStore.getState();
     expect(state.playerNickname).toBe("Anonymous");
-    expect(state.error).toMatch(/display name/i);
+    expect(state.error).toMatch(/keep it clean/i);
   });
 
   it("accepts valid nickname and clears error", () => {

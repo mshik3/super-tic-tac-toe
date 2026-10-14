@@ -22,6 +22,13 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [playersInQueue, setPlayersInQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (status !== "searching") return;
+    const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [status]);
 
   const apiClient = useMemo(() => new GameAPIClient(), []);
 
@@ -49,15 +56,15 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
         failures += 1;
         if (failures >= 5) {
           setStatus("error");
-          setError("Too many connection failures. Please refresh and try again.");
+          setError("Can't reach the server. Check your connection and retry.");
           return;
         }
         if (err instanceof Error && err.message.includes("Too many requests")) {
           rateLimitDelay = Math.min(rateLimitDelay * 2, 60000);
           delay = rateLimitDelay;
-          setError(`Rate limited. Retrying in ${Math.ceil(delay / 1000)}s…`);
+          setError(`The server is busy. Trying again in ${Math.ceil(delay / 1000)}s…`);
         } else {
-          setError(`Connection error (${failures}/5). Retrying…`);
+          setError(`Couldn't reach the server. Retrying (${failures} of 5)…`);
         }
       }
       timer = setTimeout(poll, delay);
@@ -86,201 +93,63 @@ export const MatchmakingScreen: React.FC<MatchmakingScreenProps> = ({
   };
 
   return (
-    <div
-      className="h-screen flex items-center justify-center bg-grid"
-      style={{ backgroundColor: "var(--bg)" }}
-    >
-      <div
-        className="w-full max-w-sm mx-4 rounded-xl border overflow-hidden animate-fade-in"
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border-2)",
-        }}
-      >
-        {/* Header strip */}
-        <div
-          className="px-6 pt-6 pb-4 text-center border-b"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <p
-            className="text-xs font-bold tracking-widest uppercase mb-1"
-            style={{ color: "var(--text-dim)" }}
-          >
-            Online
-          </p>
-          <h2
-            className="text-2xl font-bold tracking-wide"
-            style={{ color: "var(--text)" }}
-          >
-            {status === "searching" ? "Finding Opponent" : "Connection Error"}
-          </h2>
-          {playerNickname && (
+    <div className="h-full overflow-y-auto p-3 md:p-6">
+      <section className="panel mx-auto max-w-sm">
+        <h2 className="panel-title">
+          {status === "searching" ? "Looking for an opponent" : "Can't connect"}
+        </h2>
+
+        <div className="p-3 space-y-3">
+          <table className="w-full text-xs">
+            <tbody className="[&_td]:py-1 [&_tr]:border-b [&_tr]:border-line [&_td:last-child]:text-right [&_td:last-child]:font-mono">
+              <tr>
+                <td className="text-muted">Playing as</td>
+                <td className="text-ink">{playerNickname ?? "—"}</td>
+              </tr>
+              <tr>
+                <td className="text-muted">Queue position</td>
+                <td>{queuePosition ?? "—"}</td>
+              </tr>
+              <tr>
+                <td className="text-muted">Players in queue</td>
+                <td>{playersInQueue ?? "—"}</td>
+              </tr>
+              <tr>
+                <td className="text-muted">Time searching</td>
+                <td>{formatElapsed(elapsed)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {error && (
             <p
-              className="text-sm font-medium mt-1"
-              style={{ color: "var(--text-dim)" }}
+              role="status"
+              className={`px-2 py-1.5 rounded border text-xs ${
+                status === "error"
+                  ? "bg-o-soft border-o text-o"
+                  : "bg-warn-soft border-warn-line text-warn"
+              }`}
             >
-              Playing as{" "}
-              <span style={{ color: "var(--x)" }}>{playerNickname}</span>
+              {error}
             </p>
           )}
-        </div>
 
-        {/* Radar / content area */}
-        <div className="px-6 py-8">
-          {status === "searching" && (
-            <div className="flex flex-col items-center gap-8">
-              {/* Radar animation */}
-              <div className="relative w-28 h-28 flex items-center justify-center">
-                {/* Pulsing rings */}
-                <div
-                  className="absolute inset-0 rounded-full animate-pulse-ring"
-                  style={{ border: "1px solid rgba(34,211,238,0.3)" }}
-                />
-                <div
-                  className="absolute inset-2 rounded-full animate-pulse-ring"
-                  style={{
-                    border: "1px solid rgba(34,211,238,0.2)",
-                    animationDelay: "0.6s",
-                  }}
-                />
-                <div
-                  className="absolute inset-4 rounded-full animate-pulse-ring"
-                  style={{
-                    border: "1px solid rgba(34,211,238,0.15)",
-                    animationDelay: "1.2s",
-                  }}
-                />
-                {/* Sweep line */}
-                <div
-                  className="absolute inset-0 rounded-full overflow-hidden animate-radar-rotate"
-                  style={{ border: "1px solid rgba(34,211,238,0.1)" }}
-                >
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background:
-                        "conic-gradient(from 0deg, rgba(34,211,238,0.3) 0deg, transparent 60deg)",
-                    }}
-                  />
-                </div>
-                {/* Center dot */}
-                <div
-                  className="w-3 h-3 rounded-full z-10"
-                  style={{
-                    backgroundColor: "var(--x)",
-                    boxShadow: "0 0 10px var(--x)",
-                  }}
-                />
-              </div>
-
-              <div className="w-full">
-                <StatBox
-                  label="Queue Position"
-                  value={queuePosition !== null ? `#${queuePosition}` : "—"}
-                />
-              </div>
-
-              {playersInQueue !== null && (
-                <p
-                  className="text-xs font-medium tracking-wide"
-                  style={{ color: "var(--text-dim)" }}
-                >
-                  {playersInQueue}{" "}
-                  {playersInQueue === 1 ? "player" : "players"} in queue
-                </p>
-              )}
-
-              {error && (
-                <div
-                  className="w-full rounded px-3 py-2 text-xs font-medium text-center"
-                  style={{
-                    backgroundColor: "rgba(245, 192, 48, 0.08)",
-                    border: "1px solid rgba(245, 192, 48, 0.2)",
-                    color: "#F0B500",
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
-
-          {status === "error" && (
-            <div className="flex flex-col items-center gap-4">
-              <div
-                className="text-5xl font-bold"
-                style={{ color: "var(--o)", opacity: 0.4 }}
-              >
-                !
-              </div>
-              <div
-                className="w-full rounded px-4 py-3 text-sm font-medium text-center"
-                style={{
-                  backgroundColor: "rgba(255, 68, 68, 0.08)",
-                  border: "1px solid rgba(255, 68, 68, 0.25)",
-                  color: "var(--o)",
-                }}
-              >
-                {error}
-              </div>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-6 py-2 rounded font-bold text-sm tracking-widest uppercase transition-opacity hover:opacity-80"
-                style={{
-                  backgroundColor: "rgba(34,211,238,0.12)",
-                  color: "var(--x)",
-                  border: "1px solid rgba(34,211,238,0.3)",
-                }}
-              >
+          <div className="flex gap-2">
+            {status === "error" && (
+              <button onClick={() => window.location.reload()} className="btn-primary flex-1">
                 Retry
               </button>
-            </div>
-          )}
+            )}
+            <button onClick={handleCancel} className="btn flex-1">
+              Cancel
+            </button>
+          </div>
         </div>
-
-        {/* Cancel */}
-        <div
-          className="px-6 pb-6 border-t pt-4"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <button
-            onClick={handleCancel}
-            className="w-full py-2.5 rounded font-semibold text-sm tracking-widest uppercase transition-opacity hover:opacity-70"
-            style={{
-              backgroundColor: "var(--surface-2)",
-              color: "var(--text-dim)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            Cancel Search
-          </button>
-        </div>
-      </div>
+      </section>
     </div>
   );
 };
 
-function StatBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="rounded-lg px-3 py-3 text-center"
-      style={{
-        backgroundColor: "var(--surface-2)",
-        border: "1px solid var(--border)",
-      }}
-    >
-      <div
-        className="text-xs font-medium tracking-wide uppercase mb-1"
-        style={{ color: "var(--text-dim)" }}
-      >
-        {label}
-      </div>
-      <div
-        className="text-2xl font-bold font-mono"
-        style={{ color: "var(--text)" }}
-      >
-        {value}
-      </div>
-    </div>
-  );
+function formatElapsed(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }

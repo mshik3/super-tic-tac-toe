@@ -69,27 +69,27 @@ export function validateNickname(rawInput: string | null | undefined): {
   const sanitized = sanitizeNickname(rawInput);
 
   if (!sanitized) {
-    errors.push("Display name is required.");
+    errors.push("Pick a nickname.");
   }
 
   // Reject rather than silently strip symbols, emoji and non-ASCII
   if (/[^A-Za-z0-9\s]/.test(rawInput ?? "")) {
-    errors.push("Only letters, numbers, and spaces are allowed.");
+    errors.push("Letters, numbers and spaces only.");
   }
 
   if (sanitized.length < 3 || sanitized.length > 20) {
-    errors.push("Must be 3–20 characters long.");
+    errors.push("Must be 3–20 characters.");
   }
 
   const normalized = normalizeForProfanity(sanitized);
   if (PROFANITY_BLOCKLIST.some((bad) => normalized.includes(bad))) {
-    errors.push("Please choose a different, family-friendly display name.");
+    errors.push("Keep it clean. Try another name.");
   }
 
   return { isValid: errors.length === 0, sanitized, errors };
 }
 
-export const NICKNAME_RULE_HINT = "3–20 chars; letters, numbers, and spaces only.";
+export const NICKNAME_RULE_HINT = "3–20 letters, numbers or spaces.";
 
 const NICKNAME_KEY = "stt-nickname";
 
