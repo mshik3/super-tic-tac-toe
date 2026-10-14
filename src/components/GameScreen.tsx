@@ -6,7 +6,6 @@ import {
   useGameState,
   useGameError,
   useGameMoves,
-  useStartNewGame,
   useMakeMove,
   useResetCurrentGame,
   useClearError,
@@ -20,6 +19,9 @@ import {
   useDisconnectFromGame,
   useFindOnlineGame,
   useTurnDeadline,
+  useScore,
+  useRematch,
+  useRequestRematch,
 } from "../store/gameStore";
 
 export const GameScreen: React.FC = () => {
@@ -28,7 +30,6 @@ export const GameScreen: React.FC = () => {
   const error = useGameError();
   const moves = useGameMoves();
 
-  const startNewGame = useStartNewGame();
   const makeMove = useMakeMove();
   const resetCurrentGame = useResetCurrentGame();
   const clearError = useClearError();
@@ -42,6 +43,9 @@ export const GameScreen: React.FC = () => {
   const playerNickname = usePlayerNickname();
   const disconnectFromGame = useDisconnectFromGame();
   const findOnlineGame = useFindOnlineGame();
+  const score = useScore();
+  const rematch = useRematch();
+  const requestRematch = useRequestRematch();
 
   useEffect(() => {
     if (error) {
@@ -92,19 +96,23 @@ export const GameScreen: React.FC = () => {
 
   const xIsMe = isOnline && playerSymbol === "X";
   const oIsMe = isOnline && playerSymbol === "O";
+  const xWins = xIsMe ? score.you : score.opponent;
+  const oWins = xIsMe ? score.opponent : score.you;
+
+  const confirmLeave = () =>
+    !isOnline ||
+    gameState.status !== "playing" ||
+    window.confirm("Leave this game? It counts as a forfeit.");
 
   const handleDisconnect = () => {
-    if (isOnline) disconnectFromGame();
-    else resetCurrentGame();
+    if (confirmLeave()) disconnectFromGame();
   };
 
   const handleNewGame = () => {
-    if (isOnline) {
-      disconnectFromGame();
-      setTimeout(() => findOnlineGame(), 100);
-    } else {
-      resetCurrentGame();
-    }
+    if (!isOnline) return resetCurrentGame();
+    if (!confirmLeave()) return;
+    disconnectFromGame();
+    setTimeout(() => findOnlineGame(), 100);
   };
 
   const isFinished = gameState.status === "finished";
@@ -157,7 +165,7 @@ export const GameScreen: React.FC = () => {
               className="text-xs font-bold tracking-widest"
               style={{ color: "var(--text-dim)" }}
             >
-              VS
+              {isOnline ? `${xWins} – ${oWins}` : "VS"}
             </span>
             {isOnline && !isFinished && <TurnClock />}
           </div>
@@ -268,24 +276,45 @@ export const GameScreen: React.FC = () => {
               )}
             </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={handleNewGame}
-                className="px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80"
-                style={{
-                  backgroundColor: isOnline
-                    ? "var(--x)"
-                    : "var(--surface-2)",
-                  color: isOnline ? "var(--bg)" : "var(--text)",
-                  border: "1px solid var(--border-2)",
-                }}
-              >
-                {isOnline ? "Find Match" : "Play Again"}
-              </button>
+            <div className="flex gap-2 flex-wrap justify-center">
+              {isOnline ? (
+                <button
+                  onClick={requestRematch}
+                  disabled={!opponentConnected || rematch.you}
+                  className={`px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    rematch.opponent && !rematch.you ? "animate-pulse" : ""
+                  }`}
+                  style={{
+                    backgroundColor: "var(--x)",
+                    color: "var(--bg)",
+                    border: "1px solid var(--border-2)",
+                  }}
+                >
+                  {!opponentConnected
+                    ? "Opponent left"
+                    : rematch.you
+                      ? "Waiting for opponent…"
+                      : rematch.opponent
+                        ? "Accept rematch"
+                        : "Rematch"}
+                </button>
+              ) : (
+                <button
+                  onClick={handleNewGame}
+                  className="px-4 py-1.5 rounded text-sm font-bold tracking-wider uppercase transition-opacity hover:opacity-80"
+                  style={{
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text)",
+                    border: "1px solid var(--border-2)",
+                  }}
+                >
+                  Play Again
+                </button>
+              )}
 
               {isOnline && (
                 <button
-                  onClick={disconnectFromGame}
+                  onClick={handleNewGame}
                   className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
                   style={{
                     backgroundColor: "var(--surface-2)",
@@ -293,23 +322,21 @@ export const GameScreen: React.FC = () => {
                     border: "1px solid var(--border)",
                   }}
                 >
-                  Menu
+                  New opponent
                 </button>
               )}
 
-              {!isOnline && gameState.status === "finished" && (
-                <button
-                  onClick={startNewGame}
-                  className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
-                  style={{
-                    backgroundColor: "var(--surface-2)",
-                    color: "var(--text-dim)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  New Game
-                </button>
-              )}
+              <button
+                onClick={disconnectFromGame}
+                className="px-4 py-1.5 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-70"
+                style={{
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text-dim)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                Menu
+              </button>
             </div>
           </div>
         </div>
@@ -322,12 +349,13 @@ export const GameScreen: React.FC = () => {
           className="hidden md:block w-72 border-r shrink-0 overflow-y-auto"
           style={{ borderColor: "var(--border)" }}
         >
-          <Instructions onNewGame={handleNewGame} />
+          <Instructions />
         </div>
 
         {/* Center — Board */}
-        <div className="flex-1 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
-          <div className="flex flex-col items-center gap-3 w-full">
+        <div className="flex-1 flex p-3 md:p-6 overflow-y-auto">
+          {/* m-auto, not items-center: centering would clip the top when content overflows */}
+          <div className="m-auto flex flex-col items-center gap-3 w-full">
             <GameBoard
               gameState={gameState}
               onMove={makeMove}
@@ -357,21 +385,19 @@ export const GameScreen: React.FC = () => {
                   border: "1px solid var(--border-2)",
                 }}
               >
-                {isOnline ? "New Match" : "New Game"}
+                {isOnline ? "New Opponent" : "New Game"}
               </button>
-              {isOnline && (
-                <button
-                  onClick={handleDisconnect}
-                  className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
-                  style={{
-                    backgroundColor: "var(--surface-2)",
-                    color: "var(--text-dim)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  Leave
-                </button>
-              )}
+              <button
+                onClick={handleDisconnect}
+                className="px-3 py-1.5 rounded text-xs font-semibold tracking-wide uppercase"
+                style={{
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text-dim)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {isOnline ? "Leave" : "Menu"}
+              </button>
             </div>
 
             {/* Mobile — move log */}
@@ -383,7 +409,6 @@ export const GameScreen: React.FC = () => {
                 moves={moves}
                 currentPlayer={gameState.currentPlayer}
                 isGameActive={gameState.status === "playing"}
-                variant="compact"
                 order="desc"
                 heightClass="h-48"
                 autoScroll={false}
@@ -402,6 +427,7 @@ export const GameScreen: React.FC = () => {
             currentPlayer={gameState.currentPlayer}
             isGameActive={gameState.status === "playing"}
             order="asc"
+            autoScroll
           />
 
           {/* Desktop action buttons */}
@@ -418,22 +444,20 @@ export const GameScreen: React.FC = () => {
                 border: "1px solid rgba(0,204,255,0.3)",
               }}
             >
-              {isOnline ? "Find New Match" : "New Game"}
+              {isOnline ? "New Opponent" : "New Game"}
             </button>
 
-            {isOnline && (
-              <button
-                onClick={handleDisconnect}
-                className="w-full py-2 rounded font-semibold text-sm tracking-wide uppercase transition-opacity hover:opacity-70"
-                style={{
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text-dim)",
-                  border: "1px solid var(--border)",
-                }}
-              >
-                Leave Game
-              </button>
-            )}
+            <button
+              onClick={handleDisconnect}
+              className="w-full py-2 rounded font-semibold text-sm tracking-wide uppercase transition-opacity hover:opacity-70"
+              style={{
+                backgroundColor: "var(--surface-2)",
+                color: "var(--text-dim)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              {isOnline ? "Leave Game" : "Menu"}
+            </button>
           </div>
         </div>
       </div>
@@ -451,7 +475,6 @@ export const GameScreen: React.FC = () => {
             style={{ backgroundColor: "var(--surface)" }}
           >
             <Instructions
-              onNewGame={handleNewGame}
               showHeaderClose
               onClose={() => setIsMenuOpen(false)}
             />

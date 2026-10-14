@@ -6,9 +6,7 @@ interface MoveLogProps {
   moves: GameMove[];
   currentPlayer: PlayerSymbol;
   isGameActive: boolean;
-  variant?: "default" | "compact";
   order?: "asc" | "desc";
-  maxHeightClass?: string;
   heightClass?: string;
   autoScroll?: boolean;
 }
@@ -18,14 +16,11 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
     moves,
     currentPlayer,
     isGameActive,
-    variant = "default",
     order = "asc",
-    maxHeightClass,
     heightClass,
     autoScroll = false,
   }) => {
     const moveListRef = useRef<HTMLDivElement>(null);
-    const isCompact = variant === "compact";
 
     useEffect(() => {
       if (!autoScroll || !moveListRef.current) return;
@@ -40,7 +35,7 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
 
     return (
       <div
-        className="flex flex-col h-full"
+        className="flex flex-col flex-1 min-h-0"
         style={{ backgroundColor: "var(--surface)" }}
       >
         {/* Header */}
@@ -83,7 +78,7 @@ export const MoveLog: React.FC<MoveLogProps> = React.memo(
         {/* Move list */}
         <div
           ref={moveListRef}
-          className={`overflow-y-auto flex-1 ${isCompact ? "p-2" : "p-2"} ${heightClass ?? maxHeightClass ?? ""}`}
+          className={`overflow-y-auto p-2 ${heightClass ?? "flex-1"}`}
         >
           {moves.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full py-8 gap-2">

@@ -1,13 +1,12 @@
 import React from "react";
 
 interface InstructionsProps {
-  onNewGame?: () => void;
   showHeaderClose?: boolean;
   onClose?: () => void;
 }
 
 export const Instructions: React.FC<InstructionsProps> = React.memo(
-  ({ onNewGame, showHeaderClose, onClose }) => {
+  ({ showHeaderClose, onClose }) => {
     return (
       <div
         className="h-full flex flex-col"
@@ -76,23 +75,6 @@ export const Instructions: React.FC<InstructionsProps> = React.memo(
           </Section>
         </div>
 
-        {/* Footer */}
-        <div
-          className="border-t p-4"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <button
-            onClick={onNewGame}
-            className="w-full py-2 rounded text-sm font-semibold tracking-wide uppercase transition-opacity hover:opacity-80"
-            style={{
-              backgroundColor: "var(--surface-2)",
-              color: "var(--text-dim)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            New Game
-          </button>
-        </div>
       </div>
     );
   }

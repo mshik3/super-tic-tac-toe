@@ -94,5 +94,41 @@ const d = (async () => {
   wb.close();
 })();
 
-await Promise.all([c, d]);
+// R: after a finished game both players vote rematch; the session restarts with sides swapped and the score kept
+const mr = await match();
+const r = (async () => {
+  const { a, b, ma, mb } = mr;
+  const wa = await open(ma.gameId, a, ma.connectToken);
+  const wb = await open(mb.gameId, b, mb.connectToken);
+  await sleep(300);
+  // random legal moves, paced under the move rate limit
+  const mine = lastState(wa).yourSymbol;
+  const latest = () => [...wa.msgs].reverse().find((m) => m.type === 'GAME_STATE' || (m.type === 'MOVE_RESULT' && m.payload.valid))?.payload;
+  for (let st = latest(); (st.status ?? st.gameStatus) === 'playing'; st = latest()) {
+    const { sub, main, activeBoard } = st.board;
+    const legal = [];
+    sub.forEach((cells, bi) => cells.forEach((v, ci) => {
+      if (v === null && main[bi] === null && (activeBoard === null || activeBoard === bi)) legal.push([bi, ci]);
+    }));
+    const [boardIndex, cellIndex] = legal[Math.floor(Math.random() * legal.length)];
+    const mover = st.currentPlayer === mine ? wa : wb;
+    mover.send(JSON.stringify({ type: 'MAKE_MOVE', payload: { boardIndex, cellIndex } }));
+    await sleep(300);
+  }
+  const done = lastState(wa);
+  const symbolBefore = done.yourSymbol;
+  const decided = done.winner !== 'draw';
+  wa.send(JSON.stringify({ type: 'REMATCH' }));
+  await sleep(300);
+  console.log('R vote shown:', lastState(wb)?.opponentWantsRematch ? 'ok' : `BUG (${JSON.stringify(lastState(wb))})`);
+  wb.send(JSON.stringify({ type: 'REMATCH' }));
+  await sleep(300);
+  const next = lastState(wa);
+  console.log('R restarted:', next.status === 'playing' && next.moves.length === 0 && !next.opponentWantsRematch ? 'ok' : `BUG (${JSON.stringify(next)})`);
+  console.log('R sides swapped:', next.yourSymbol !== symbolBefore ? 'ok' : 'BUG');
+  console.log('R score kept:', next.yourWins + next.opponentWins === (decided ? 1 : 0) ? 'ok' : `BUG (${next.yourWins}-${next.opponentWins})`);
+  wa.close(); wb.close();
+})();
+
+await Promise.all([c, d, r]);
 process.exit(0);

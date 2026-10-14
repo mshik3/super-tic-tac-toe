@@ -45,6 +45,8 @@ interface GameStore {
   opponentNickname: string | null;
   gameOverReason: GameOverPayload["reason"] | null;
   turnDeadline: number | null; // local epoch ms when the player to move loses on time
+  score: { you: number; opponent: number };
+  rematch: { you: boolean; opponent: boolean };
   websocket: GameWebSocket | null;
   apiClient: GameAPIClient;
 
@@ -64,6 +66,7 @@ interface GameStore {
     connectToken?: string
   ) => void;
   disconnectFromGame: () => void;
+  requestRematch: () => void;
   handleServerMessage: (message: ServerMessage) => void;
 }
 
@@ -124,6 +127,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
   opponentNickname: null,
   gameOverReason: null,
   turnDeadline: null,
+  score: { you: 0, opponent: 0 },
+  rematch: { you: false, opponent: false },
   websocket: null,
   apiClient: new GameAPIClient(),
 
@@ -293,6 +298,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
 
     set({
       turnDeadline: null,
+      score: { you: 0, opponent: 0 },
+      rematch: { you: false, opponent: false },
       websocket: null,
       gameId: null,
       playerSymbol: null,
@@ -306,6 +313,10 @@ const storeImpl = (set: any, get: any): GameStore => ({
       gameMode: "local",
       error: null,
     });
+  },
+
+  requestRematch: () => {
+    get().websocket?.send({ type: "REMATCH" });
   },
 
   // ─── WebSocket message handler ─────────────────────────────────────────────
@@ -335,6 +346,8 @@ const storeImpl = (set: any, get: any): GameStore => ({
           playerNickname: payload.yourNickname ?? get().playerNickname,
           turnDeadline: deadlineFrom(payload.turnTimeLeftMs),
           gameOverReason: payload.status === "finished" ? get().gameOverReason : null,
+          score: { you: payload.yourWins, opponent: payload.opponentWins },
+          rematch: { you: payload.youWantRematch, opponent: payload.opponentWantsRematch },
           error: null,
         });
         break;
@@ -448,6 +461,9 @@ export const useOpponentNickname = () => useGameStore((s) => s.opponentNickname)
 export const useGameOverReason = () => useGameStore((s) => s.gameOverReason);
 export const usePlayerNickname = () => useGameStore((s) => s.playerNickname);
 export const useTurnDeadline = () => useGameStore((s) => s.turnDeadline);
+export const useScore = () => useGameStore((s) => s.score);
+export const useRematch = () => useGameStore((s) => s.rematch);
+export const useRequestRematch = () => useGameStore((s) => s.requestRematch);
 
 export const useStartNewGame = () => useGameStore((s) => s.startNewGame);
 export const useMakeMove = () => useGameStore((s) => s.makeMove);

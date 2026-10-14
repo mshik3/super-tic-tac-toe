@@ -30,19 +30,28 @@ export class GameSession extends DurableObject<Env> {
 	private moves: StoredMove[] = [];
 	private turnDeadline = 0; // epoch ms when the current player loses on time
 	private allowedPlayers: Map<string, { symbol: PlayerSymbol; token: string; nickname?: string }> = new Map(); // admitted players and tokens
+	private wins: Record<string, number> = {}; // series score by playerId
+	private rematchVotes = new Set<string>();
 
 	private async persist(): Promise<void> {
-		await this.ctx.storage.put({ moves: this.moves, gameState: this.gameState, turnDeadline: this.turnDeadline });
+		await this.ctx.storage.put({
+			moves: this.moves,
+			gameState: this.gameState,
+			turnDeadline: this.turnDeadline,
+			wins: this.wins,
+			allowedPlayers: Array.from(this.allowedPlayers.entries()),
+		});
 	}
 
 	private async initializeGameSession(gameId: string): Promise<void> {
 		this.moves = (await this.ctx.storage.get<StoredMove[]>('moves')) ?? [];
 		this.gameState = (await this.ctx.storage.get<GameState>('gameState')) ?? createNewGame(gameId);
 		this.turnDeadline = (await this.ctx.storage.get<number>('turnDeadline')) ?? 0;
+		this.wins = (await this.ctx.storage.get<Record<string, number>>('wins')) ?? {};
 	}
 
 	// Security: Rate limiting for moves to prevent spam
-	private checkMoveRateLimit(playerId: string, maxMoves: number = 5, windowMs: number = 10000): boolean {
+	private checkMoveRateLimit(playerId: string, maxMoves: number = 20, windowMs: number = 10000): boolean {
 		const now = Date.now();
 		const limit = this.moveRateLimit.get(playerId);
 
@@ -85,8 +94,6 @@ export class GameSession extends DurableObject<Env> {
 					}
 					this.allowedPlayers.set(p.id, { symbol: p.symbol, token: p.token, nickname: p.nickname });
 				}
-				// Persist allowed players and game id
-				await this.ctx.storage.put('allowedPlayers', Array.from(this.allowedPlayers.entries()));
 				await this.persist();
 				await this.updateAlarm();
 				return new Response('ok');
@@ -213,6 +220,9 @@ export class GameSession extends DurableObject<Env> {
 					}
 					await this.handleMakeMove(playerId, player, this.gameState, clientMessage.payload);
 					break;
+				case 'REMATCH':
+					await this.handleRematch(playerId);
+					break;
 				default:
 					this.sendError(playerId, 'Invalid request');
 			}
@@ -311,6 +321,7 @@ export class GameSession extends DurableObject<Env> {
 
 		// Check if game is over
 		if (this.gameState.status === 'finished') {
+			await this.recordWin(this.gameState.winner);
 			const gameOverPayload: GameOverPayload = {
 				winner: this.gameState.winner,
 				reason: this.gameState.winner === 'draw' ? 'draw' : 'win',
@@ -321,10 +332,41 @@ export class GameSession extends DurableObject<Env> {
 				type: 'GAME_OVER',
 				payload: gameOverPayload,
 			});
+			this.broadcastGameState();
 		}
 
 		// While someone is dropped, keep their 60s forfeit clock instead of restarting it
 		if (this.gameState.status === 'finished' || this.allConnected()) await this.updateAlarm();
+	}
+
+	private async recordWin(winner: GameState['winner']) {
+		for (const [id, p] of this.allowedPlayers) {
+			if (p.symbol === winner) this.wins[id] = (this.wins[id] ?? 0) + 1;
+		}
+		await this.persist();
+	}
+
+	// Both players vote; the second vote starts a fresh game in the same session
+	// with sides swapped so the first move alternates.
+	private async handleRematch(playerId: string) {
+		if (this.gameState?.status !== 'finished') return this.sendError(playerId, 'Game still in progress');
+		if (!this.allConnected()) return this.sendError(playerId, 'Opponent has left');
+
+		this.rematchVotes.add(playerId);
+		if (this.rematchVotes.size === 2) {
+			this.rematchVotes.clear();
+			for (const [id, p] of this.allowedPlayers) {
+				p.symbol = p.symbol === 'X' ? 'O' : 'X';
+				const conn = this.players.get(id);
+				if (conn) conn.symbol = p.symbol;
+			}
+			this.gameState = createNewGame(this.gameState.gameId);
+			this.moves = [];
+			this.turnDeadline = 0;
+			await this.persist();
+			await this.updateAlarm();
+		}
+		this.broadcastGameState();
 	}
 
 	private allConnected() {
@@ -340,17 +382,19 @@ export class GameSession extends DurableObject<Env> {
 		const player = this.players.get(playerId);
 		if (!player) return;
 		player.connected = false;
+		this.rematchVotes.clear();
 		this.broadcastGameState();
 		await this.updateAlarm();
 	}
 
-	// Alarm policy: finished games are wiped after 30s. A game in progress with
+	// Alarm policy: finished games are wiped after 30s, or 10min while both
+	// players are still there and might rematch. A game in progress with
 	// both players connected runs the turn clock: the player to move loses at
 	// turnDeadline. Otherwise (waiting for a player, or someone dropped) the alarm
 	// fires in 60s: a lone connected player wins by forfeit, an empty session is wiped.
 	private async updateAlarm() {
 		if (this.gameState?.status === 'finished') {
-			await this.ctx.storage.setAlarm(Date.now() + 30_000);
+			await this.ctx.storage.setAlarm(Date.now() + (this.allConnected() ? 600_000 : 30_000));
 		} else if (this.gameState?.status === 'playing' && this.allConnected()) {
 			if (!this.turnDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
 			await this.ctx.storage.setAlarm(this.turnDeadline);
@@ -370,13 +414,14 @@ export class GameSession extends DurableObject<Env> {
 			const loser = this.gameState.currentPlayer;
 			this.gameState.status = 'finished';
 			this.gameState.winner = timedOut ? (loser === 'X' ? 'O' : 'X') : connected[0].symbol;
-			await this.persist();
+			await this.recordWin(this.gameState.winner);
 			const payload: GameOverPayload = {
 				winner: this.gameState.winner,
 				reason: timedOut ? 'timeout' : 'forfeit',
 				finalBoard: this.gameState.board,
 			};
 			this.broadcast({ type: 'GAME_OVER', payload });
+			this.broadcastGameState();
 			await this.updateAlarm();
 			return;
 		}
@@ -415,6 +460,10 @@ export class GameSession extends DurableObject<Env> {
 			yourNickname: this.allowedPlayers.get(playerId)?.nickname,
 			opponentNickname: this.getOpponentNickname(playerId),
 			moves: this.moves,
+			yourWins: this.wins[playerId] ?? 0,
+			opponentWins: Object.entries(this.wins).reduce((n, [id, w]) => (id === playerId ? n : n + w), 0),
+			youWantRematch: this.rematchVotes.has(playerId),
+			opponentWantsRematch: [...this.rematchVotes].some((id) => id !== playerId),
 		};
 
 		this.sendToPlayer(playerId, {

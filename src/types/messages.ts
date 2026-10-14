@@ -8,10 +8,9 @@ import type {
 
 export type * from "./game";
 
-export interface ClientMessage {
-  type: "MAKE_MOVE";
-  payload: MakeMovePayload;
-}
+export type ClientMessage =
+  | { type: "MAKE_MOVE"; payload: MakeMovePayload }
+  | { type: "REMATCH" };
 
 export interface ServerMessage {
   type: "GAME_STATE" | "MOVE_RESULT" | "GAME_OVER" | "ERROR";
@@ -35,6 +34,10 @@ export interface GameStatePayload {
   yourNickname?: string;
   opponentNickname?: string;
   moves: StoredMove[];
+  yourWins: number; // series score across rematches
+  opponentWins: number;
+  youWantRematch: boolean;
+  opponentWantsRematch: boolean;
 }
 
 export interface MoveResultPayload {

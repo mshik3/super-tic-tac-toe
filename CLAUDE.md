@@ -32,5 +32,4 @@ npm run deploy           # deploy to Cloudflare
 - Worker imports the game engine and protocol types straight from `src/` by relative path (wrangler bundles them); no shared package
 
 ## Known Limitations
-- No rematch flow — players must find new match after game ends
 - Disconnect banner says 60s but shows no live countdown (the turn clock is live)

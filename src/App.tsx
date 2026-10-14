@@ -8,6 +8,7 @@ import {
   useFindOnlineGame,
   useConnectToGame,
   usePlayerId,
+  useDisconnectFromGame,
 } from "./store/gameStore";
 import { useGameStore } from "./store/gameStore";
 
@@ -18,6 +19,7 @@ function App() {
   const findOnlineGame = useFindOnlineGame();
   const connectToGame = useConnectToGame();
   const playerId = usePlayerId();
+  const disconnectFromGame = useDisconnectFromGame();
   const playerNickname = useGameStore((s) => s.playerNickname);
 
   const handlePlayLocal = () => {
@@ -39,7 +41,7 @@ function App() {
   };
 
   const handleCancelSearch = () => {
-    setGameMode("local");
+    disconnectFromGame();
   };
 
   switch (currentScreen) {
